@@ -213,7 +213,7 @@ The source only gives a window, like "Q2 2026" or "2027". `Robin` shows it as th
 docker build -t robin .
 ```
 
-Or run it from source with [uv](https://docs.astral.sh/uv/) and [pnpm](https://pnpm.io): `uv run uvicorn robin.main:app --port 8080` in `backend/`, `pnpm dev` in `frontend/`.
+Or run it from source with [uv](https://docs.astral.sh/uv/) and [pnpm](https://pnpm.io): `pnpm install && pnpm build` in `frontend/`, then `uv run uvicorn robin.main:app --port 8080` in `backend/`, which serves the built frontend too.
 
 </details>
 

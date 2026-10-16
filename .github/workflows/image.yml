@@ -1,0 +1,155 @@
+# Checks every pull request and every push to main. A push to main then builds the container
+# image as `main`, and a `v*` tag builds it as that version and `latest` and publishes the
+# release. An image is built only when every check passes, and a push that only touches the
+# README, its images or the license runs nothing. A tag always runs, GitHub never filters one
+# by path.
+name: image
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore:
+      - README.md
+      - LICENSE
+      - assets/**
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - README.md
+      - LICENSE
+      - assets/**
+  workflow_dispatch:
+
+# Read only unless a job asks for more, so the checks and everything they install cannot write.
+permissions:
+  contents: read
+
+concurrency:
+  # Cancel an in-flight run when a newer commit lands on the same branch or pull request.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: 0.12.18
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy robin tests
+      - run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Reads the pnpm version from packageManager in package.json.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm exec prettier --check src
+      # Type checks before bundling.
+      - run: pnpm build
+
+  build:
+    needs: [backend, frontend]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # A release is tagged with the version the code carries, so the image and the app agree.
+      - if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' backend/robin/__init__.py)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in robin/__init__.py"
+            exit 1
+          fi
+
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          # Lower cased by the action, which GHCR requires.
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          # `main` follows the branch, `latest` the newest release, and the commit sha pins
+          # either for a rollback.
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=sha,prefix=,format=long
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Layer cache lives in the Actions cache: an unchanged lockfile means uv sync and
+          # pnpm install are reused instead of run again.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      # An annotated tag names the release: its first line is the codename, the rest the notes.
+      # A lightweight tag gets notes generated from the commits.
+      - run: |
+          ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME")
+          if [ "$(jq -r .object.type <<< "$ref")" = tag ]; then
+            message=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$(jq -r .object.sha <<< "$ref")" --jq .message)
+            codename=$(head -n 1 <<< "$message")
+            tail -n +2 <<< "$message" > notes.md
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag               --title "$GITHUB_REF_NAME, $codename" --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

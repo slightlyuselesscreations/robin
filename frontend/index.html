@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-theme="european" data-scheme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/robin-european.svg" type="image/svg+xml" />
+    <title>Robin</title>
+    <!-- The theme last applied in this browser, set before the first paint so it never flashes,
+         and the tab's icon drawn as its species. -->
+    <script>
+      try {
+        const kept = JSON.parse(localStorage.getItem('robin-theme'))
+        Object.assign(document.documentElement.dataset, kept)
+        if (
+          /^(european|american|pink|siberian|rufous|flame|red-capped|white-throated|black)$/.test(
+            kept.theme,
+          )
+        )
+          document.querySelector('link[rel=icon]').href = `/robin-${kept.theme}.svg`
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

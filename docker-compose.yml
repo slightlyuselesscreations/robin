@@ -1,0 +1,12 @@
+services:
+  robin:
+    image: ghcr.io/slightlyuselesscreations/robin:latest
+    container_name: robin
+    restart: unless-stopped
+    user: '1000:1000'
+    ports:
+      - '8080:8080'
+    environment:
+      TZ: UTC
+    volumes:
+      - ./data:/data

@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1028 100" width="1028" height="100">
+  <g transform="translate(-18 -14)">
+    <defs><clipPath id="european"><circle cx="64" cy="64" r="38"/></clipPath></defs>
+    <g clip-path="url(#european)">
+      <rect width="128" height="128" fill="#8B632F"/>
+      <path d="M24 56c10-6 24-4 30 8s2 30-10 36l-20 0z" fill="#6B4A20"/>
+      <circle cx="80" cy="72" r="34" fill="#848C97"/>
+      <circle cx="83" cy="72" r="31" fill="#FF8F02"/>
+      <circle cx="70" cy="114" r="22" fill="#C3BDBD"/>
+    </g>
+    <path d="M100 53l10 3.5-10 3z" fill="#848C97"/>
+    <circle cx="87" cy="51" r="4.5" fill="#0a0a0b"/>
+    <circle cx="88.5" cy="49.5" r="1.4" fill="#C3BDBD"/>
+  </g>
+  <g transform="translate(98 -14)">
+    <defs><clipPath id="american"><circle cx="64" cy="64" r="38"/></clipPath></defs>
+    <g clip-path="url(#american)">
+      <rect width="128" height="128" fill="#5B6066"/>
+      <path d="M24 56c10-6 24-4 30 8s2 30-10 36l-20 0z" fill="#464A50"/>
+      <circle cx="83" cy="72" r="31" fill="#D9622B"/>
+      <circle cx="70" cy="114" r="22" fill="#EFEBE4"/>
+      <path d="M58 22h62v36c-12 2-24 2-34 0-10-2-20-8-28-18z" fill="#2E3135"/>
+    </g>
+    <path d="M100 53l10 3.5-10 3z" fill="#E9B930"/>
+    <path d="M81.6 48.5a6 6 0 0 1 10.8 0M81.6 53.5a6 6 0 0 0 10.8 0" fill="none" stroke="#F1EEE8" stroke-width="1.8" stroke-linecap="round"/>
+    <circle cx="87" cy="51" r="4.5" fill="#0a0a0b"/>
+    <circle cx="88.5" cy="49.5" r="1.4" fill="#F1EEE8"/>
+  </g>
+  <g transform="translate(214 -14)">
+    <defs><clipPath id="pink"><circle cx="64" cy="64" r="38"/></clipPath></defs>
+    <g clip-path="url(#pink)">
+      <rect width="128" height="128" fill="#4A4246"/>
+      <path d="M24 56c10-6 24-4 30 8s2 30-10 36l-20 0z" fill="#3A3336"/>
+      <circle cx="83" cy="72" r="31" fill="#E8478A"/>
+      <circle cx="70" cy="114" r="22" fill="#F5B5CC"/>
+      <path d="M58 22h62v40c-12 2-24 2-34 0-10-2-20-10-28-20z" fill="#3A3336"/>
+    </g>
+    <path d="M100 53l10 3.5-10 3z" fill="#6A6164"/>
+    <circle cx="87" cy="51" r="4.5" fill="#0a0a0b"/>
+    <circle cx="88.5" cy="49.5" r="1.4" fill="#F3E9EC"/>
+  </g>
+  <g transform="translate(330 -14)">
+    <defs><clipPath id="siberian"><circle cx="64" cy="64" r="38"/></clipPath></defs>
+    <g clip-path="url(#siberian)">
+      <rect width="128" height="128" fill="#3F63B5"/>
+      <path d="M24 56c10-6 24-4 30 8s2 30-10 36l-20 0z" fill="#2F4C8E"/>
+      <circle cx="80" cy="72" r="34" fill="#16181D"/>
+      <circle cx="83" cy="72" r="31" fill="#F2F3F6"/>
+      <circle cx="70" cy="114" r="22" fill="#E2E5EC"/>
+      <path d="M102 53l-1 7-15-3-26-6v-9l28 5z" fill="#16181D"/>
+    </g>
+    <path d="M100 53l10 3.5-10 3z" fill="#5C6370"/>
+    <circle cx="87" cy="51" r="4.5" fill="#0a0a0b"/>
+    <circle cx="88.5" cy="49.5" r="1.4" fill="#F2F3F6"/>
+  </g>
+  <g transform="translate(446 -14)">
+    <defs><clipPath id="rufous"><circle cx="64" cy="64" r="38"/></clipPath></defs>
+    <g clip-path="url(#rufous)">
+      <rect width="128" height="128" fill="#A4532E"/>
+      <path d="M24 56c10-6 24-4 30 8s2 30-10 36l-20 0z" fill="#5A5E64"/>
+      <circle cx="83" cy="72" r="31" fill="#C9773F"/>
+      <circle cx="70" cy="114" r="22" fill="#F1ECE4"/>
+      <path d="M58 22h62v36c-12 2-24 2-34 0-10-2-20-8-28-18z" fill="#6B7076"/>
+      <path d="M90 60c4 2 8 2 12 0v6c-4 2-8 2-12 0z" fill="#F1ECE4"/>
+    </g>
+    <path d="M100 53l10 3.5-10 3z" fill="#E2A93B"/>
+    <circle cx="87" cy="51" r="4.5" fill="#0a0a0b"/>
+    <circle cx="88.5" cy="49.5" r="1.4" fill="#F1ECE4"/>
+  </g>
+  <g transform="translate(562 -14)">
+    <defs><clipPath id="flame"><circle cx="64" cy="64" r="38"/></clipPath></defs>
+    <g clip-path="url(#flame)">
+      <rect width="128" height="128" fill="#4F4A46"/>
+      <path d="M24 56c10-6 24-4 30 8s2 30-10 36l-20 0z" fill="#3B3734"/>
+      <path d="M28 72c8-5 17-5 24 0" fill="none" stroke="#F2EFEA" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="83" cy="72" r="31" fill="#F25A1D"/>
+      <circle cx="70" cy="114" r="22" fill="#F2EFEA"/>
+      <path d="M58 22h62v34c-12 2-24 2-34 0-10-2-20-6-28-16z" fill="#4F4A46"/>
+      <circle cx="96" cy="43" r="4.5" fill="#F2EFEA"/>
+    </g>
+    <path d="M100 53l10 3.5-10 3z" fill="#2B2826"/>
+    <circle cx="87" cy="51" r="4.5" fill="#0a0a0b"/>
+    <circle cx="88.5" cy="49.5" r="1.4" fill="#F2EFEA"/>
+  </g>
+  <g transform="translate(678 -14)">
+    <defs><clipPath id="red-capped"><circle cx="64" cy="64" r="38"/></clipPath></defs>
+    <g clip-path="url(#red-capped)">
+      <rect width="128" height="128" fill="#18191C"/>
+      <path d="M24 56c10-6 24-4 30 8s2 30-10 36l-20 0z" fill="#0E0F11"/>
+      <path d="M28 70c8-5 17-5 24 0M30 80c7-4 14-4 20 0" fill="none" stroke="#F2F0EE" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="83" cy="72" r="31" fill="#E0213B"/>
+      <circle cx="70" cy="114" r="22" fill="#F2F0EE"/>
+      <path d="M58 22h62v34c-12 2-24 2-34 0-10-2-20-6-28-16z" fill="#18191C"/>
+      <circle cx="94" cy="40" r="8" fill="#E0213B"/>
+    </g>
+    <path d="M100 53l10 3.5-10 3z" fill="#2A2B2F"/>
+    <circle cx="87" cy="51" r="4.5" fill="#0a0a0b"/>
+    <circle cx="88.5" cy="49.5" r="1.4" fill="#F2F0EE"/>
+  </g>
+  <g transform="translate(794 -14)">
+    <defs><clipPath id="white-throated"><circle cx="64" cy="64" r="38"/></clipPath></defs>
+    <g clip-path="url(#white-throated)">
+      <rect width="128" height="128" fill="#6F7782"/>
+      <path d="M24 56c10-6 24-4 30 8s2 30-10 36l-20 0z" fill="#565D67"/>
+      <circle cx="83" cy="72" r="31" fill="#F08A3C"/>
+      <circle cx="70" cy="114" r="22" fill="#F3EEE7"/>
+      <path d="M58 22h62v30c-12 2-24 2-34 0-10-2-20-4-28-12z" fill="#6F7782"/>
+      <path d="M76 44c8-3 18-3 28 2v16c-10 3-20 3-28-1z" fill="#16181C"/>
+      <path d="M88 62c5 2 10 2 15 0v5c-5 3-10 3-15 1z" fill="#F3EEE7"/>
+    </g>
+    <path d="M100 53l10 3.5-10 3z" fill="#2A2C31"/>
+    <circle cx="87" cy="51" r="4.5" fill="#0a0a0b"/>
+    <circle cx="88.5" cy="49.5" r="1.4" fill="#F3EEE7"/>
+  </g>
+  <g transform="translate(910 -14)">
+    <defs><clipPath id="black"><circle cx="64" cy="64" r="38"/></clipPath></defs>
+    <g clip-path="url(#black)">
+      <rect width="128" height="128" fill="#2A2C31"/>
+      <path d="M24 56c10-6 24-4 30 8s2 30-10 36l-20 0z" fill="#1C1D21"/>
+      <circle cx="83" cy="72" r="31" fill="#3A3D44"/>
+      <circle cx="70" cy="114" r="22" fill="#30333A"/>
+    </g>
+    <path d="M100 53l10 3.5-10 3z" fill="#1C1D21"/>
+    <circle cx="87" cy="51" r="5.5" fill="#55585F"/>
+    <circle cx="87" cy="51" r="4.5" fill="#0a0a0b"/>
+    <circle cx="88.5" cy="49.5" r="1.4" fill="#C9CBD0"/>
+  </g>
+</svg>

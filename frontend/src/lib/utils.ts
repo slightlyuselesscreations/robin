@@ -1,0 +1,60 @@
+import { type ClassValue, clsx } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+
+/** The first of this month at local midnight. Nothing dated before it is shown but in search. */
+export function monthStart(): Date {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), 1)
+}
+
+/**
+ * Whether something came out before the first of this month: a YYYY-MM-DD day, or a release
+ * timestamp in seconds read as its UTC day. Search finds it, to favourite who made it, and
+ * nothing offers to monitor it. Undated never is.
+ */
+export function outBeforeMonth(when: string | number | null): boolean {
+  if (when === null) return false
+  if (typeof when === 'string') return new Date(`${when.slice(0, 10)}T00:00:00`) < monthStart()
+  const utc = new Date(when * 1000)
+  return new Date(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate()) < monthStart()
+}
+
+/** A local calendar day as YYYY-MM-DD. */
+export function isoDay(day: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`
+}
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
+export const INPUT = 'border-line bg-base'
+
+/**
+ * Every control in a page header, and any small action that looks like one: one height, one
+ * type size. Active carries the accent.
+ */
+export function controlClass(active = false) {
+  return cn(
+    'inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors disabled:pointer-events-none disabled:opacity-40',
+    active
+      ? 'border-accent/60 bg-accent/12 text-accent'
+      : 'border-line bg-surface text-ink-dim hover:border-line-strong hover:text-ink',
+  )
+}
+
+/**
+ * The name of what Settings leaves of a long list, for `KeptSelect`: the few shown once most
+ * are hidden, else what is hidden, and nothing while nothing is.
+ */
+export function filtered<T>(
+  all: T[],
+  hidden: string[],
+  code: (item: T) => string,
+  name: (code: string) => string,
+): string[] {
+  if (!hidden.length) return []
+  const shown = all.map(code).filter((c) => !hidden.includes(c))
+  return hidden.length > all.length / 2 ? shown.map(name) : [`Not ${hidden.map(name).join(', ')}`]
+}

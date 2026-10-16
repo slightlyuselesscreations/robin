@@ -1,0 +1,465 @@
+@import 'tailwindcss';
+
+/* shadcn's dark styles follow the scheme set on <html>, the system's while that is System. */
+@custom-variant dark {
+  &:where([data-scheme='dark'], [data-scheme='dark'] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where([data-scheme='system'], [data-scheme='system'] *) {
+      @slot;
+    }
+  }
+}
+
+/*
+ * Window height steps, for the dialogs that never scroll and give way as the window shortens.
+ * Declared in ascending order on purpose: Tailwind orders arbitrary media variants as text,
+ * so a 1050px rule would land before a 900px one and lose to it.
+ */
+@custom-variant vh620 (@media (min-height: 620px));
+@custom-variant vh700 (@media (min-height: 700px));
+@custom-variant vh760 (@media (min-height: 760px));
+@custom-variant vh880 (@media (min-height: 880px));
+@custom-variant vh900 (@media (min-height: 900px));
+@custom-variant vh1050 (@media (min-height: 1050px));
+@custom-variant vh1100 (@media (min-height: 1100px));
+
+@theme {
+  /* Bundled through @fontsource in main.tsx, so no request leaves the host. */
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+
+  /* The caret InputOTP draws in its active slot. */
+  --animate-caret-blink: caret-blink 1s ease-out infinite;
+  @keyframes caret-blink {
+    0%,
+    70%,
+    100% {
+      opacity: 1;
+    }
+    20%,
+    50% {
+      opacity: 0;
+    }
+  }
+
+  /*
+   * Every colour is light-dark(light, dark), picked by the color-scheme <html> inherits from
+   * its data-scheme. The neutrals are one lightness ramp tinted by the theme's --hue and
+   * --tint, so every theme layers the same way, and the accent is the theme's --brand. The
+   * accent is for state and action only, never large fills.
+   */
+  --color-base: light-dark(oklch(0.97 var(--wash) var(--hue)), oklch(0.145 var(--tint) var(--hue)));
+  --color-surface: light-dark(
+    oklch(0.985 var(--wash) var(--hue)),
+    oklch(0.183 var(--tint) var(--hue))
+  );
+  --color-raised: light-dark(oklch(1 0 0), oklch(0.22 var(--tint) var(--hue)));
+  --color-line: light-dark(oklch(0.9 var(--wash) var(--hue)), oklch(0.271 var(--tint) var(--hue)));
+  --color-line-strong: light-dark(
+    oklch(0.84 var(--wash) var(--hue)),
+    oklch(0.332 var(--tint) var(--hue))
+  );
+  --color-ink: light-dark(oklch(0.21 var(--tint) var(--hue)), oklch(0.947 var(--tint) var(--hue)));
+  --color-ink-dim: light-dark(
+    oklch(0.43 var(--tint) var(--hue)),
+    oklch(0.712 var(--tint) var(--hue))
+  );
+  --color-ink-faint: light-dark(
+    oklch(0.55 var(--tint) var(--hue)),
+    oklch(0.542 var(--tint) var(--hue))
+  );
+  --color-accent: var(--brand);
+  --color-accent-hi: color-mix(in oklab, var(--brand), light-dark(black, white) 20%);
+  /* The semaphore stays the same in every theme, and darkens on light to keep its contrast. */
+  --color-good: light-dark(#1e7f55, #3fa87a);
+  --color-wait: light-dark(#9a5c08, #e0a33a);
+  --color-track: light-dark(#5b48b8, #9d8cf0);
+  --color-bad: light-dark(#c0302a, #d4443c);
+  /* The favourite star, and nothing else. */
+  --color-star: light-dark(#b08300, #f2c94c);
+  /* A title Radarr or Sonarr holds, in their own gold and blue shaded down to sit with the
+     ink. The only brand hues in Robin. */
+  --color-radarr: light-dark(#94690c, #d4a63c);
+  --color-sonarr: light-dark(#1f7aa0, #3aa3cc);
+
+  /* Tight scale. Every step is deliberate, nothing between 1.375 and 1.875. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.6rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.875rem;
+  --text-2xl--line-height: 2.125rem;
+  --text-3xl: 2.5rem;
+  --text-3xl--line-height: 2.6rem;
+
+  --radius-card: 0.375rem;
+
+  /* Layers separate by light: a faint top highlight on dark, a faint shadow on light, plus a
+     deeper shadow for anything floating. */
+  --shadow-raised:
+    inset 0 1px 0 light-dark(transparent, rgb(255 255 255 / 0.04)),
+    0 1px 2px light-dark(rgb(0 0 0 / 0.05), transparent);
+  --shadow-overlay:
+    inset 0 1px 0 light-dark(transparent, rgb(255 255 255 / 0.06)),
+    0 24px 64px -12px light-dark(rgb(0 0 0 / 0.18), rgb(0 0 0 / 0.7)),
+    0 0 0 1px light-dark(rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.4));
+}
+
+/*
+ * Each theme is a robin species: its accent the colour the species is known by, its neutrals
+ * tinted by the rest of it. The accent is given on light then on dark. Where a species' colour
+ * is a state's or another species', its accent is the nearest shade that stays apart from it:
+ * Flame and Red-capped from the Error red, White-throated from the European orange and the
+ * Waiting amber, and Black from the ink.
+ */
+:root {
+  --european: light-dark(#c2410c, #ff5a00);
+  --american: light-dark(#a8431f, #d96540);
+  --pink: light-dark(#c2185b, #ff5e97);
+  --siberian: light-dark(#2f5bb7, #6a93f0);
+  --rufous: light-dark(#76382e, #b4685c);
+  --flame: light-dark(#da2300, #f07b60);
+  --red-capped: light-dark(#b80031, #ec2058);
+  --white-throated: light-dark(#a25c43, #ff9557);
+  --black: light-dark(#2e2e2e, #cacaca);
+
+  /* A tint shows far more on near white than on near black, so light surfaces take half. */
+  --wash: calc(var(--tint) / 2);
+
+  /* Native controls and their popups follow this, so a plain select drops down dark. */
+  color-scheme: dark;
+}
+
+/* European robin: orange face and breast, olive brown back. */
+:root,
+[data-theme='european'] {
+  --brand: var(--european);
+  --hue: 85;
+  --tint: 0.022;
+}
+/* American robin: brick red breast, dark slate back and head. */
+[data-theme='american'] {
+  --brand: var(--american);
+  --hue: 230;
+  --tint: 0.024;
+}
+/* Pink robin: rose pink breast, sooty black back. */
+[data-theme='pink'] {
+  --brand: var(--pink);
+  --hue: 350;
+  --tint: 0.024;
+}
+/* Siberian blue robin: blue from crown to tail, white beneath. */
+[data-theme='siberian'] {
+  --brand: var(--siberian);
+  --hue: 264;
+  --tint: 0.03;
+}
+/* Rufous-backed robin: rufous back, dark grey head and wings, white throat. */
+[data-theme='rufous'] {
+  --brand: var(--rufous);
+  --hue: 38;
+  --tint: 0.028;
+}
+/* Flame robin: flame orange breast, dark grey brown back, white forehead and wing bars. */
+[data-theme='flame'] {
+  --brand: var(--flame);
+  --hue: 60;
+  --tint: 0.016;
+}
+/* Red-capped robin: scarlet breast and cap, jet black back, white barring. */
+[data-theme='red-capped'] {
+  --brand: var(--red-capped);
+  --hue: 15;
+  --tint: 0.014;
+}
+/* White-throated robin: orange beneath, grey above, black face, white throat. */
+[data-theme='white-throated'] {
+  --brand: var(--white-throated);
+  --hue: 200;
+  --tint: 0.014;
+}
+/* Black robin: black from bill to tail. */
+[data-theme='black'] {
+  --brand: var(--black);
+  --hue: 0;
+  --tint: 0;
+}
+
+[data-scheme='light'] {
+  color-scheme: light;
+}
+[data-scheme='system'] {
+  color-scheme: light dark;
+}
+
+/*
+ * shadcn components speak a fixed token vocabulary. Rather than paste in the stock zinc
+ * palette, every one of those tokens is defined here in terms of the Robin colours above.
+ * That is what keeps the components consistent with the rest of the app instead of looking
+ * like a default install.
+ */
+:root {
+  --radius: 0.375rem;
+  --background: var(--color-base);
+  --foreground: var(--color-ink);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-ink);
+  --popover: light-dark(oklch(1 0 0), oklch(0.202 var(--tint) var(--hue)));
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-accent);
+  --primary-foreground: light-dark(#ffffff, #1a0b06);
+  --secondary: var(--color-raised);
+  --secondary-foreground: var(--color-ink);
+  --muted: light-dark(oklch(0.96 var(--wash) var(--hue)), oklch(0.202 var(--tint) var(--hue)));
+  --muted-foreground: var(--color-ink-dim);
+  --accent: light-dark(oklch(0.945 var(--wash) var(--hue)), oklch(0.241 var(--tint) var(--hue)));
+  --accent-foreground: var(--color-ink);
+  --destructive: var(--color-bad);
+  --destructive-foreground: #ffffff;
+  --border: var(--color-line);
+  --input: light-dark(oklch(0.87 var(--wash) var(--hue)), oklch(0.296 var(--tint) var(--hue)));
+  --ring: var(--color-accent);
+  /* The sidebar sits one step above the page, active entries on the raised surface. */
+  --sidebar: var(--color-surface);
+  --sidebar-foreground: var(--color-ink-dim);
+  --sidebar-primary: var(--color-accent);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--color-raised);
+  --sidebar-accent-foreground: var(--color-ink);
+  --sidebar-border: var(--color-line);
+  --sidebar-ring: var(--color-accent);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent-bg: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  /* Tailwind v4 leaves a border the colour of the text. A border nobody coloured is a line. */
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-line);
+  }
+
+  html {
+    background-color: var(--color-base);
+  }
+
+  body {
+    background-color: var(--color-base);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.006em;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* Poster rows scroll horizontally. Keep the scrollbar quiet but reachable. */
+  .rail::-webkit-scrollbar {
+    height: 6px;
+  }
+  .rail::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 3px;
+  }
+  .rail::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* The loader: the body rises as the wing beats down, which is what reads as flight. */
+  .robin-loader {
+    animation: robin-bob 0.5s ease-in-out infinite;
+  }
+  .robin-loader .robin-wing {
+    transform-origin: 14px 12px;
+    animation: robin-flap 0.5s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .robin-loader,
+    .robin-loader .robin-wing {
+      animation-duration: 1.6s;
+    }
+  }
+
+  /* An item new or changed since the page was reloaded from the outdated toast. */
+  .updated {
+    animation: updated 6s ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .updated {
+      animation-timing-function: steps(1, end);
+    }
+  }
+}
+
+/* Held, then faded. Kept in step with GLOW in lib/outdated.ts. */
+@keyframes updated {
+  0%,
+  65% {
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--color-accent) 45%, transparent),
+      0 0 18px 4px color-mix(in oklab, var(--color-accent) 40%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 1px transparent,
+      0 0 18px 4px transparent;
+  }
+}
+
+@keyframes robin-flap {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(-0.6);
+  }
+}
+
+@keyframes robin-bob {
+  0%,
+  100% {
+    transform: translateY(0.75px);
+  }
+  50% {
+    transform: translateY(-0.75px);
+  }
+}
+
+/* What the user moves to slides in from the side it lies on, `.slide-in`, and what arrives rises
+   in one after another, `--i` places apart, `--step` each, `.rise`. What the user just changed
+   pops, `.pop`. Reduced motion keeps the fade alone. */
+.slide-in {
+  animation: slide-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.slide-in[data-back] {
+  --slide-from: -2rem;
+}
+.rise {
+  animation: rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * var(--step, 45ms) + 80ms);
+}
+.pop {
+  animation: pop 0.5s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide-in,
+  .slide-in[data-back] {
+    --slide-from: 0;
+  }
+  .rise {
+    --rise-by: 0;
+  }
+  .pop {
+    animation-name: rise;
+  }
+}
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    translate: var(--slide-from, 2rem) 0;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    translate: 0 var(--rise-by, 0.75rem);
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+/* The logo in flight on a first sign in: it bobs and tilts while streaks of wind pass it, from
+   the right edge of their box to past its left, each in `--d` seconds. Reduced motion slows it. */
+.flight {
+  animation: flight-bob 2.4s ease-in-out infinite;
+}
+.flight-wind {
+  mask-image: linear-gradient(to right, transparent, black 25%, black 75%, transparent);
+}
+.flight-streak {
+  left: 100%;
+  animation: flight-streak linear infinite both;
+  animation-duration: calc(var(--d) * 1s);
+}
+@media (prefers-reduced-motion: reduce) {
+  .flight {
+    animation-duration: 6s;
+  }
+  .flight-streak {
+    animation-duration: calc(var(--d) * 3s);
+  }
+}
+@keyframes flight-bob {
+  0%,
+  100% {
+    translate: 0 0.15rem;
+    rotate: -3deg;
+  }
+  50% {
+    translate: 0.35rem -0.6rem;
+    rotate: 3deg;
+  }
+}
+@keyframes flight-streak {
+  to {
+    translate: calc(-1 * var(--wind, 18rem) - 100%) 0;
+  }
+}

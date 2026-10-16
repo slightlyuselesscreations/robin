@@ -1,0 +1,24 @@
+# secrets
+.env
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# node
+node_modules/
+dist/
+
+# runtime data
+data/
+
+*.tsbuildinfo
+
+# local only
+CLAUDE.md
+.claude/
+compose.test.yml

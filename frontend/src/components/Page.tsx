@@ -542,7 +542,8 @@ export function HealthWord({ health }: { health: ServiceHealth }) {
     return (
       <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-faint">
         <CircleDashed className="size-3.5 shrink-0" />
-        Not set up
+        <span className="shrink-0">Not set up</span>
+        {health.error ? <Clip className="text-ink-dim">{health.error}</Clip> : null}
       </span>
     )
   }

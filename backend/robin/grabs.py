@@ -8,9 +8,10 @@ while Robin was off is not missed.
 Of the releases a game takes, the first listed is grabbed once it comes from a group outside the
 scene set in Settings, or PreDB has it pre'd as the full game and not nuked. One PreDB lists as
 anything else, nuked or an update, is passed over. One PreDB cannot vouch for, because it does
-not list it or did not answer, is held for the user to confirm, and the user is told. Every grab
-goes to qBittorrent under the category set in Settings, tagged so its download is followed, and
-the user is told once it is done.
+not list it or did not answer, is held for the user to confirm, and the user is told. With
+qBittorrent set, a grab goes there under the category set in Settings, tagged so its download
+is followed, and the user is told once it is done. Without it, Prowlarr hands the grab to its
+own download client, and Robin follows it no further.
 """
 
 from __future__ import annotations
@@ -167,21 +168,33 @@ async def _grab(release: dict[str, Any], request: dict[str, Any]) -> int:
         db.set_request_error(request_id, str(exc))
         return 0
     log.info("grabs: grabbed %s for %s", release["title"], request["game_name"])
+    settings = db.get_settings()
+    client = "qBittorrent" if settings.qbittorrent_ready else "Prowlarr"
     await _tell(
-        db.get_settings(),
+        settings,
         title=f"{request['game_name']} is downloading",
-        message=f"Sent {release['title']} to qBittorrent.",
+        message=f"Sent {release['title']} to {client}.",
         tags="inbox_tray",
     )
     return 1
 
 
-async def _send(release: dict[str, Any], request: dict[str, Any]) -> None:
+async def _send(release: dict[str, Any], request: dict[str, Any], held: bool = False) -> None:
+    """To qBittorrent when it is set, otherwise to Prowlarr's own download client. Prowlarr
+    forgets a search's releases within the hour, so one `held` for review is searched again."""
     settings = db.get_settings()
-    torrent = await prowlarr.torrent(release)
-    await qbittorrent.add(
-        settings, torrent, category=settings.qbittorrent_category, request_id=int(request["id"])
-    )
+    if settings.qbittorrent_ready:
+        torrent = await prowlarr.torrent(release)
+        await qbittorrent.add(
+            settings, torrent, category=settings.qbittorrent_category, request_id=int(request["id"])
+        )
+        return
+    if held:
+        listed = await prowlarr.raw(filters.search_term_for(request["game_name"]))
+        release = next((r for r in listed if r.get("guid") == release.get("guid")), {})
+        if not release:
+            raise upstream.UpstreamError("Prowlarr no longer lists the release")
+    await prowlarr.grab(release)
 
 
 async def confirm(request_id: int) -> bool:
@@ -193,7 +206,7 @@ async def confirm(request_id: int) -> bool:
     if release is None or request is None or not db.claim_grab(request_id, release["title"]):
         return False
     try:
-        await _send(release, request)
+        await _send(release, request, held=True)
     except upstream.UpstreamError:
         db.release_grab(request_id, request["status"])
         db.put_in_review(request_id, release)
@@ -205,7 +218,7 @@ async def confirm(request_id: int) -> bool:
 async def track_downloads() -> int:
     """Mark the grabs qBittorrent has finished and tell the user, once each. Returns how many."""
     settings = db.get_settings()
-    if not settings.prowlarr_ready:
+    if not settings.qbittorrent_ready:
         return 0
     held = await qbittorrent.grabs(settings)
     done = 0
@@ -230,7 +243,7 @@ async def with_downloads(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     settings = db.get_settings()
     held: dict[int, dict[str, Any]] = {}
     pending = any(r["status"] == "matched" and not r["downloaded_at"] for r in rows)
-    if settings.prowlarr_ready and pending:
+    if settings.qbittorrent_ready and pending:
         try:
             held = await qbittorrent.grabs(settings)
         except upstream.UpstreamError as exc:

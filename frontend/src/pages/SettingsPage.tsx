@@ -441,7 +441,9 @@ function BackupList({ onPick, picked }: { onPick?: (name: string) => void; picke
     onError: failed,
   })
 
-  if (!list.data?.length) return <p className="text-xs text-ink-faint">No backups yet</p>
+  // Setup picks from the list, and a fresh install has none to pick.
+  if (!list.data?.length)
+    return onPick ? null : <p className="text-xs text-ink-faint">No backups yet</p>
   return (
     <ul className="divide-y divide-line rounded-md border border-line">
       {list.data.map((backup) => (
@@ -1333,16 +1335,19 @@ const SOURCES = {
 
 /**
  * Every integration Health checks, or this does not compile, each in the tab of the category
- * it serves, General's for none, and all together in setup. PreDB is keyless, nothing to set.
+ * it serves, General's for none, and all together in setup. PreDB is keyless, nothing to set,
+ * and qBittorrent is part of Prowlarr's panel.
  */
 const INTEGRATIONS = {
-  qbittorrent: { category: 'games', Panel: QbittorrentPanel },
   prowlarr: { category: 'games', Panel: ProwlarrPanel },
   suwayomi: { category: 'comics', Panel: SuwayomiPanel },
   radarr: { category: 'screens', Panel: (props) => <ArrPanel app="radarr" {...props} /> },
   sonarr: { category: 'screens', Panel: (props) => <ArrPanel app="sonarr" {...props} /> },
 } as const satisfies Record<
-  Exclude<keyof Health, (typeof SOURCES)[Category]['key'] | 'predb' | 'notify' | 'backups'>,
+  Exclude<
+    keyof Health,
+    (typeof SOURCES)[Category]['key'] | 'predb' | 'qbittorrent' | 'notify' | 'backups'
+  >,
   { category: Category | null; Panel: React.ComponentType<StoredProps> }
 >
 
@@ -1431,7 +1436,8 @@ function HardcoverPanel({ form, setForm, stored }: StoredProps) {
   )
 }
 
-function QbittorrentPanel({ form, setForm, stored }: StoredProps) {
+/** qBittorrent, optional within Prowlarr: with it Robin follows each grab to downloaded. */
+function QbittorrentFields({ form, setForm, stored }: StoredProps) {
   const categories = useQuery({
     queryKey: ['qbittorrent-categories'],
     queryFn: api.qbittorrentCategories,
@@ -1443,7 +1449,17 @@ function QbittorrentPanel({ form, setForm, stored }: StoredProps) {
   const categoryOptions = [...new Set([category, ...(categories.data ?? [])])]
 
   return (
-    <Panel title="qBittorrent" icon={Download}>
+    <div className="space-y-5 border-t border-line pt-5">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2 text-xs font-semibold tracking-wider text-ink-dim uppercase">
+          <Download className="size-3.5 text-accent" />
+          qBittorrent
+          <ReleaseTag tag="Optional" />
+        </div>
+        <p className="text-xs text-ink-faint">
+          Optionally track downloads in a Home panel, and get "download complete" notifications.
+        </p>
+      </div>
       <Field label="WebUI URL">
         <Input
           value={form.qbittorrent_url ?? ''}
@@ -1488,7 +1504,7 @@ function QbittorrentPanel({ form, setForm, stored }: StoredProps) {
           />
         )}
       </Field>
-    </Panel>
+    </div>
   )
 }
 
@@ -1505,10 +1521,6 @@ function ProwlarrPanel({ form, setForm, stored }: StoredProps) {
 
   return (
     <Panel title="Prowlarr" icon={Search}>
-      {!stored.qbittorrent_ready ? (
-        <p className="text-xs text-ink-faint">Set qBittorrent first.</p>
-      ) : null}
-
       <Field label="Instance URL">
         <Input
           value={form.prowlarr_url ?? ''}
@@ -1535,7 +1547,9 @@ function ProwlarrPanel({ form, setForm, stored }: StoredProps) {
             onChange={(prowlarr_indexer_ids) => setForm({ ...form, prowlarr_indexer_ids })}
           />
         </Field>
-      ) : null}
+      ) : (
+        <NotYet label="Indexers" />
+      )}
 
       <Field label="Freeleech only">
         <Toggle
@@ -1556,6 +1570,8 @@ function ProwlarrPanel({ form, setForm, stored }: StoredProps) {
           className={INPUT}
         />
       </Field>
+
+      <QbittorrentFields form={form} setForm={setForm} stored={stored} />
     </Panel>
   )
 }
@@ -1864,7 +1880,9 @@ function ArrPanel({ app, form, setForm, stored }: TabProps & { app: Arr; stored:
             />
           </Field>
         </>
-      ) : null}
+      ) : (
+        <NotYet label="Quality profile and root folder" />
+      )}
     </Panel>
   )
 }
@@ -2716,9 +2734,10 @@ function SetupIntegrations(props: StoredProps) {
         </section>
       ))}
       <Dialog open={open !== null} onOpenChange={(next) => (next ? null : setOpen(null))}>
-        <DialogContent className="border-0 bg-transparent p-0 shadow-none sm:max-w-md">
+        <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto border-0 bg-transparent p-0 shadow-none sm:max-w-md">
           <DialogTitle className="sr-only">{open ? SERVICE_LABELS[open] : ''}</DialogTitle>
           {Open ? <Open {...props} /> : null}
+          {open ? <TestRow service={open} form={props.form} /> : null}
           <div className="flex justify-center">
             <Button onClick={() => save.mutate()} disabled={save.isPending}>
               {save.isPending ? <Spinner className="size-4" /> : <Save className="size-4" />}
@@ -2731,9 +2750,48 @@ function SetupIntegrations(props: StoredProps) {
   )
 }
 
+/**
+ * A pick that only appears once its service is set, named until then, so it is not missed. In
+ * setup, whose integrations alone set `OptionalPanels`, a test sets it.
+ */
+function NotYet({ label }: { label: string }) {
+  const setup = useContext(OptionalPanels)
+  return (
+    <Field label={label}>
+      <p className="text-xs text-ink-faint">{setup ? 'Test to pick' : 'Save to pick'}</p>
+    </Field>
+  )
+}
+
+/**
+ * Save what was entered and check `service` at once, so what appears once it is set appears
+ * where it was entered. The result is setup's health check too.
+ */
+function TestRow({ service, form }: { service: keyof Health; form: Form }) {
+  const client = useQueryClient()
+  const test = useMutation({
+    mutationFn: async () => {
+      await api.saveSettings(form)
+      await client.invalidateQueries({ queryKey: ['settings'] })
+      return api.health(true)
+    },
+    onSuccess: (health) => client.setQueryData(['health', 'setup'], health),
+    onError: failed,
+  })
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-3">
+      <Button variant="outline" onClick={() => test.mutate()} disabled={test.isPending}>
+        {test.isPending ? <Spinner className="size-4" /> : <PlugZap className="size-4" />}
+        Test
+      </Button>
+      {test.data ? <HealthWord health={test.data[service]} /> : null}
+    </div>
+  )
+}
+
 /** A category's source on its own, and what is missing without it. */
 function SourceStep({ category, ...props }: StoredProps & { category: Category }) {
-  const { Panel: Source, data } = SOURCES[category]
+  const { Panel: Source, data, key } = SOURCES[category]
   return (
     <>
       <Rise i={0}>
@@ -2742,6 +2800,9 @@ function SourceStep({ category, ...props }: StoredProps & { category: Category }
       <p className="mt-4 text-center text-xs text-ink-faint">
         If you do not set this up, you will not get {data} data
       </p>
+      <div className="mt-6">
+        <TestRow service={key} form={props.form} />
+      </div>
     </>
   )
 }

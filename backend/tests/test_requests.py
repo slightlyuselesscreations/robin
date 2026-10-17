@@ -496,22 +496,51 @@ def test_only_one_pass_claims_a_game() -> None:
     assert not db.claim_grab(request_id, "B-RUNE")
 
 
-async def test_prowlarr_needs_qbittorrent(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+async def test_without_qbittorrent_prowlarr_downloads_and_nothing_is_followed(
+    client: AsyncClient,
+    indexers: dict[str, Any],
+    notices: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def never(term: str) -> list[dict[str, Any]]:
-        raise AssertionError("Prowlarr must not be asked")
+    pushed: list[str] = []
 
-    monkeypatch.setattr(prowlarr, "raw", never)
-    db.save_settings({"prowlarr_url": "http://prowlarr.test", "prowlarr_api_key": "key"})
-    assert db.get_settings().prowlarr_ready is False
+    async def grab(found: dict[str, Any]) -> None:
+        pushed.append(found["title"])
 
-    resp = await client.post("/api/monitored", json={"igdb_id": 1877})
-    assert resp.status_code == 201
-    assert [r["igdb_id"] for r in db.notifiable_requests()] == [1877]
-    assert await grabs.rss_sync() == 0
-    with pytest.raises(upstream.NotConfigured):
-        await prowlarr.indexers()
+    async def never(settings: Any) -> dict[int, dict[str, Any]]:
+        raise AssertionError("qBittorrent must not be asked")
+
+    monkeypatch.setattr(prowlarr, "grab", grab)
+    monkeypatch.setattr(qbittorrent, "grabs", never)
+    db.save_settings({"qbittorrent_url": ""})
+    assert db.get_settings().prowlarr_ready
+    indexers["releases"] = [release("Cyberpunk.2077-RUNE")]
+    indexers["pres"] = {"Cyberpunk.2077-RUNE": 0}
+
+    await client.post("/api/monitored", json={"igdb_id": 1877})
+    assert (pushed, indexers["added"]) == (["Cyberpunk.2077-RUNE"], [])
+    assert indexers["told"] == ["Cyberpunk 2077 is downloading"]
+    assert (await client.get("/api/monitored")).json()[0]["download"] is None
+    assert await grabs.track_downloads() == 0
+
+
+async def test_a_held_release_is_found_again_before_prowlarr_downloads_it(
+    client: AsyncClient, indexers: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pushed: list[str] = []
+
+    async def grab(found: dict[str, Any]) -> None:
+        pushed.append(found["title"])
+
+    monkeypatch.setattr(prowlarr, "grab", grab)
+    db.save_settings({"qbittorrent_url": ""})
+    indexers["releases"] = [release("Cyberpunk.2077-NEWGRP")]
+    created = (await client.post("/api/monitored", json={"igdb_id": 1877})).json()
+    searched = len(indexers["searched"])
+
+    assert (await client.post(f"/api/monitored/{created['id']}/confirm")).status_code == 200
+    assert len(indexers["searched"]) == searched + 1, "searched again, Prowlarr forgets"
+    assert pushed == ["Cyberpunk.2077-NEWGRP"]
 
 
 async def test_predb_is_read_by_section_and_status(monkeypatch: pytest.MonkeyPatch) -> None:

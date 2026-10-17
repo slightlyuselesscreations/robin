@@ -15,14 +15,7 @@ Stub = Callable[[Callable[[httpx.Request], httpx.Response]], list[httpx.Request]
 
 
 def configured() -> None:
-    # Prowlarr needs qBittorrent, where a monitored game's grab goes.
-    db.save_settings(
-        {
-            "prowlarr_url": "http://prowlarr.test",
-            "prowlarr_api_key": "secret",
-            "qbittorrent_url": "http://qbittorrent.test",
-        }
-    )
+    db.save_settings({"prowlarr_url": "http://prowlarr.test", "prowlarr_api_key": "secret"})
 
 
 RELEASES = [
@@ -163,3 +156,12 @@ async def test_the_pc_parent_category_is_never_asked_for(prowlarr_stub: Stub) ->
 
     for request in seen:
         assert request.url.params.get_list("categories") == ["4050"]
+
+
+async def test_a_grab_hands_the_release_to_prowlarrs_download_client(prowlarr_stub: Stub) -> None:
+    configured()
+    seen = prowlarr_stub(lambda _: httpx.Response(200, json={}))
+    await prowlarr.grab(RELEASES[0])
+    assert (seen[0].method, seen[0].url.path) == ("POST", "/api/v1/search")
+    assert seen[0].headers["X-Api-Key"] == "secret"
+    assert httpx.Response(200, content=seen[0].content).json() == {"guid": "a", "indexerId": 3}

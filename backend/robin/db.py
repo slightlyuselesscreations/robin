@@ -512,8 +512,7 @@ class Settings:
 
     @property
     def prowlarr_ready(self) -> bool:
-        """Prowlarr needs qBittorrent, where every grab of a monitored game goes."""
-        return bool(self.prowlarr_url and self.prowlarr_api_key and self.qbittorrent_ready)
+        return bool(self.prowlarr_url and self.prowlarr_api_key)
 
     @property
     def qbittorrent_ready(self) -> bool:

@@ -30,7 +30,7 @@ def _config() -> tuple[str, dict[str, str]]:
     settings = db.get_settings()
     if not settings.prowlarr_ready:
         raise upstream.NotConfigured(
-            "Prowlarr is not configured. Add its URL and API key, and qBittorrent, in Settings."
+            "Prowlarr is not configured. Add its URL and API key in Settings."
         )
     return settings.prowlarr_url, {"X-Api-Key": settings.prowlarr_api_key}
 
@@ -104,3 +104,13 @@ async def torrent(release: dict[str, Any]) -> str | bytes:
             return resp.content
         url = str(resp.url.join(resp.headers["location"]))
     raise upstream.UpstreamError(f"Prowlarr redirected {release.get('title')} too many times")
+
+
+async def grab(release: dict[str, Any]) -> None:
+    """Hand a release to Prowlarr's own download client, found by the indexer and guid of the
+    search that listed it. Prowlarr keeps a search's releases about half an hour."""
+    await _request(
+        "POST",
+        "/search",
+        json={"guid": release.get("guid"), "indexerId": release.get("indexerId")},
+    )

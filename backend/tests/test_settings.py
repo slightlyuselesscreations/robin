@@ -128,6 +128,22 @@ async def test_health_reports_what_is_not_set_up(client: AsyncClient) -> None:
     assert body["notify"] == {"state": "unset", "error": "", "until": None}
 
 
+async def test_a_service_partly_set_says_what_it_still_needs(client: AsyncClient) -> None:
+    await client.put(
+        "/api/settings",
+        json={
+            "prowlarr_url": "https://prowlarr.test",
+            "suwayomi_url": "https://suwayomi.test",
+            "radarr_url": "https://radarr.test",
+        },
+    )
+    body = (await client.get("/api/settings/health", params={"refresh": True})).json()
+    assert body["prowlarr"] == {"state": "unset", "error": "Needs an API key", "until": None}
+    assert body["suwayomi"]["error"] == "Needs a source ID and Comic Vine"
+    assert body["radarr"]["error"] == "Needs an API key and TMDB"
+    assert body["sonarr"]["error"] == ""
+
+
 async def test_a_service_that_does_not_answer_is_faulty_with_the_reason(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

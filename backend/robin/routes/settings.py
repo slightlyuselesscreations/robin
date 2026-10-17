@@ -418,11 +418,24 @@ HEALTH_CACHE_KEY = "health:v12"
 HEALTH_TTL = 60
 
 
-async def _check(ready: bool, probe: Coroutine[Any, Any, object]) -> ServiceHealth:
-    """Run one probe against the service's own server. One never started is closed instead."""
+def _missing(own: dict[str, object], needs: dict[str, bool] | None = None) -> str:
+    """What a service partly set still lacks, its own fields by name and then the services it
+    needs. Empty while none of its own is set."""
+    if not any(own.values()):
+        return ""
+    gaps = [name for name, value in own.items() if not value]
+    gaps += [name for name, ok in (needs or {}).items() if not ok]
+    return f"Needs {' and '.join(gaps)}" if gaps else ""
+
+
+async def _check(
+    ready: bool, probe: Coroutine[Any, Any, object], missing: str = ""
+) -> ServiceHealth:
+    """Run one probe against the service's own server. One never started is closed instead,
+    saying what it still needs when it is partly set."""
     if not ready:
         probe.close()
-        return ServiceHealth(state="unset")
+        return ServiceHealth(state="unset", error=missing)
     try:
         await probe
     except RateLimited as exc:
@@ -466,13 +479,40 @@ async def _probe() -> dict[str, Any]:
         _check(settings.tmdb_ready, tmdb.ping(settings)),
         _check(settings.hardcover_ready, hardcover.ping(settings)),
         _check(settings.comics_ready, comics.ping()),
-        _check(settings.prowlarr_ready, prowlarr.ping()),
+        _check(
+            settings.prowlarr_ready,
+            prowlarr.ping(),
+            _missing(
+                {"an address": settings.prowlarr_url, "an API key": settings.prowlarr_api_key}
+            ),
+        ),
         # PreDB is only asked once Prowlarr finds something to grab.
         _check(settings.prowlarr_ready, predb.pres("Robin", "RUNE")),
-        _check(settings.suwayomi_ready, suwayomi.source_name(settings)),
+        _check(
+            settings.suwayomi_ready,
+            suwayomi.source_name(settings),
+            _missing(
+                {"an address": settings.suwayomi_url, "a source ID": settings.suwayomi_source_id},
+                {"Comic Vine": settings.comics_ready},
+            ),
+        ),
         _check(settings.qbittorrent_ready, qbittorrent.version(settings)),
-        _check(settings.radarr_ready, arr.status(settings, "radarr")),
-        _check(settings.sonarr_ready, arr.status(settings, "sonarr")),
+        _check(
+            settings.radarr_ready,
+            arr.status(settings, "radarr"),
+            _missing(
+                {"an address": settings.radarr_url, "an API key": settings.radarr_api_key},
+                {"TMDB": settings.tmdb_ready},
+            ),
+        ),
+        _check(
+            settings.sonarr_ready,
+            arr.status(settings, "sonarr"),
+            _missing(
+                {"an address": settings.sonarr_url, "an API key": settings.sonarr_api_key},
+                {"TMDB": settings.tmdb_ready},
+            ),
+        ),
         _check(settings.notify_ready, notify.health(settings)),
         _check(settings.backups_ready, backups.health()),
     )

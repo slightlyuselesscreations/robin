@@ -479,9 +479,22 @@ def _entity(kind: str, raw: dict[str, Any]) -> dict[str, Any]:
 
 
 async def search_favourites(query: str) -> list[dict[str, Any]]:
-    """Series, people and publishers matching `query`, as Comic Vine ranks them."""
+    """Series, people and publishers matching `query`, as Comic Vine ranks them.
+
+    People and publishers are also read from their own lists by name, since a name like Marvel
+    fills every result of the search with series named after it, and the search ranks the
+    publisher nowhere.
+    """
+    # Comic Vine's filter syntax splits on these.
+    name = re.sub(r"[,:|]", " ", query).strip()
 
     async def read() -> list[dict[str, Any]]:
+        found: dict[tuple[str, int], dict[str, Any]] = {}
+
+        def keep(kind: str, rows: list[dict[str, Any]] | None) -> None:
+            for row in rows or []:
+                found.setdefault((kind, int(row["id"])), _entity(kind, row))
+
         async with client() as http:
             body = await _get(
                 http,
@@ -491,14 +504,18 @@ async def search_favourites(query: str) -> list[dict[str, Any]]:
                 field_list=f"{_ENTITY_FIELDS},resource_type",
                 limit=30,
             )
-        return [
-            _entity(RESOURCES[r["resource_type"]], r)
-            for r in body["results"] or []
-            if r.get("resource_type") in RESOURCES
-        ]
+            for r in body["results"] or []:
+                if r.get("resource_type") in RESOURCES:
+                    keep(RESOURCES[r["resource_type"]], [r])
+            for path, kind in (("/publishers/", "publisher"), ("/people/", "person")):
+                listed = await _get(
+                    http, path, filter=f"name:{name}", field_list=_ENTITY_FIELDS, limit=12
+                )
+                keep(kind, listed["results"])
+        return list(found.values())
 
     found: list[dict[str, Any]] = await db.remember(
-        f"comics:search:v1:{query.casefold()}", SEARCH_TTL, read
+        f"comics:search:v3:{query.casefold()}", SEARCH_TTL, read
     )
     return found
 

@@ -85,6 +85,11 @@ def comicvine(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> dict[str,
                     {"id": 9, "name": "A character", "resource_type": "character"},
                 ]
             )
+        if path == "/api/publishers/":
+            assert params["filter"] == "name:midnight"
+            return answer([{"id": 31, "name": "Marvel"}, {"id": 32, "name": "Midnight Press"}])
+        if path == "/api/people/":
+            return answer([])
         raise AssertionError(str(request.url))
 
     stub_http(monkeypatch, handler)
@@ -101,7 +106,8 @@ async def test_search_finds_series_people_and_publishers(
         ("series", 100),
         ("person", 41),
         ("publisher", 31),
-    ]
+        ("publisher", 32),
+    ], "a publisher the search misses comes from the list by name"
     assert found[0]["meta"] == "Marvel · 2026"
 
 

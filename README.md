@@ -241,7 +241,7 @@ Like all other projects under `slightlyuselesscreations`, **90%** of this reposi
 
 The only human "effort" gone into this project is purely conceptual, directional, monetary, in testing and in presentation.
 
-If you consider yourself likely to be "fooled" that this is a "quality" project, do not. I am an IT senior professional with solid grasp of modern IT concepts, but I am not a programmer of any relevant skill or passion whatsoever.
+I am an IT senior professional with solid grasp of modern IT concepts, but I am not a programmer of any relevant skill or passion whatsoever.
 
 I take pride and passion into creating something I would use myself, and let everyone else join in. But AI generated software is still just that. I cannot take pride into anything past my idea, because I have done **10%** of the work.
 

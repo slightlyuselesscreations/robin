@@ -346,6 +346,7 @@ LIST_FIELDS = (
     "screen_quiet",
     "books_quiet",
     "notify_destinations",
+    "comics_digest_publishers",
 )
 # Stored without a trailing slash, so a path is always appended with one.
 URL_FIELDS = (
@@ -457,6 +458,9 @@ class Settings:
     comics_schedule: list[dict[str, int]]
     screen_schedule: list[dict[str, int]]
     books_schedule: list[dict[str, int]]
+    # The Comic Vine publishers the weekly #1s digest names, each {"id", "name"}, every one
+    # while empty.
+    comics_digest_publishers: list[dict[str, Any]]
     # Quiet hours per category, [start, end], empty for none.
     games_quiet: list[int]
     comics_quiet: list[int]
@@ -684,6 +688,7 @@ def get_settings() -> Settings:
         comics_schedule=list(lists["comics_schedule"] or []),
         screen_schedule=list(lists["screen_schedule"] or []),
         books_schedule=list(lists["books_schedule"] or []),
+        comics_digest_publishers=list(lists["comics_digest_publishers"] or []),
         games_quiet=list(lists["games_quiet"] or []),
         comics_quiet=list(lists["comics_quiet"] or []),
         screen_quiet=list(lists["screen_quiet"] or []),

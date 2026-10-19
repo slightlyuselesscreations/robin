@@ -19,6 +19,23 @@ export function outBeforeMonth(when: string | number | null): boolean {
   return new Date(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate()) < monthStart()
 }
 
+/**
+ * Whether a game can be monitored: coming, or out and on PC with Prowlarr set, to be grabbed
+ * once a clean release is listed.
+ */
+export function gameMonitorable(
+  released: number | null,
+  platforms: string[],
+  prowlarrReady: boolean,
+): boolean {
+  return !outBeforeMonth(released) || (prowlarrReady && platforms.includes('PC'))
+}
+
+/** Whether a day, YYYY-MM-DD, is today or ahead. Undated never is. */
+export function ahead(day: string | null): boolean {
+  return day !== null && day.slice(0, 10) >= isoDay(new Date())
+}
+
 /** A local calendar day as YYYY-MM-DD. */
 export function isoDay(day: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')

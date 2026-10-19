@@ -623,3 +623,14 @@ async def test_turning_freeleech_only_off_searches_again(
     assert grabbed(indexers) == [], "nothing changed, nothing searched"
     await client.put("/api/settings", json={"freeleech_only": False})
     assert grabbed(indexers) == ["Cyberpunk.2077-RUNE"]
+
+
+def test_a_game_out_is_monitored_only_to_be_grabbed() -> None:
+    old = {**GAME, "first_release_date": int(datetime(2024, 1, 1, tzinfo=UTC).timestamp())}
+    assert not igdb.monitorable(db.get_settings(), old)
+
+    db.save_settings({"prowlarr_url": "http://prowlarr.test", "prowlarr_api_key": "key"})
+    settings = db.get_settings()
+    assert igdb.monitorable(settings, old)
+    assert not igdb.monitorable(settings, {**old, "platforms": ["PS5"]}), "never grabbed"
+    assert igdb.monitorable(settings, {**GAME, "platforms": ["PS5"]}), "coming"

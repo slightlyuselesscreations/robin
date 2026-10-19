@@ -47,7 +47,7 @@ import type { Shape } from '@/lib/items'
 import { useDialogBack, withParam } from '@/lib/params'
 import { useAddCountdown } from '@/lib/countdowns'
 import { usePop } from '@/lib/motion'
-import { cn } from '@/lib/utils'
+import { ahead, cn } from '@/lib/utils'
 
 /**
  * The dialog an item opens in, for every category. Top to bottom: a banner, the head (art,
@@ -460,11 +460,12 @@ export function Actions({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Counting down to the item on Home, in every dialog's actions. One with no release day, or
- * out already, says so instead.
+ * Counting down to the item on Home, in every dialog's actions, while its release day is
+ * today or ahead.
  */
 export function CountdownButton({ target }: { target: CountdownTarget }) {
   const add = useAddCountdown()
+  if (!ahead(target.date)) return null
   return (
     <Button
       variant="ghost"

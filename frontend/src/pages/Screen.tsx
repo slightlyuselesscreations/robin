@@ -47,7 +47,14 @@ const RELEASES: { value: ReleaseType; label: string }[] = [
  * is a search parameter, so back and forward step through what was looked at and a filtered
  * view can be bookmarked.
  */
-const BUILTIN = { view: 'cover', kind: 'all', release: ANY, lang: KEPT, days: '90' }
+const BUILTIN = {
+  view: 'cover',
+  kind: 'all',
+  release: ANY,
+  lang: KEPT,
+  days: '90',
+  sort: 'popularity',
+}
 
 /** The controls as TMDB is asked, anything no longer offered taking its built in default. */
 function readFilters(values: typeof BUILTIN): {
@@ -61,6 +68,7 @@ function readFilters(values: typeof BUILTIN): {
       days: windowDays(values.days, BUILTIN.days),
       language: values.lang === KEPT ? '' : values.lang,
       release: kind === 'tv' ? '' : (RELEASES.find((r) => r.value === values.release)?.value ?? ''),
+      sort: values.sort === 'date' ? 'date' : 'popularity',
     },
   }
 }
@@ -191,6 +199,17 @@ export function Screen() {
               onChange={(days) => set({ days })}
             />
           </Control>
+          <Control label="Order">
+            <Segmented
+              label="Order"
+              options={[
+                { value: 'popularity', label: 'Popular' },
+                { value: 'date', label: 'Date' },
+              ]}
+              value={filters.sort}
+              onChange={(sort) => set({ sort })}
+            />
+          </Control>
         </Options>
       </PageHeader>
 
@@ -211,6 +230,7 @@ export function Screen() {
               title={kind === 'movie' ? 'Movies' : kind === 'tv' ? 'Shows' : 'TMDB'}
               icon={kind === 'movie' ? Film : kind === 'tv' ? Tv : Clapperboard}
               count={list.length}
+              note={filters.sort === 'date' ? 'Soonest first' : 'Most anticipated first'}
             >
               <Items view={view} metaLabel="Release" items={items(list)} />
             </Section>

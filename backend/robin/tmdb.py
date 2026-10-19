@@ -170,6 +170,7 @@ def discover_params(
     language: str,
     release: str,
     languages: tuple[str, ...] | list[str] = (),
+    sort: str = "popularity",
     today: date | None = None,
 ) -> dict[str, Any]:
     """The TMDB query for one filtered page. Kept apart from the call so a test can read it.
@@ -177,8 +178,8 @@ def discover_params(
     What Settings hides is asked of TMDB where it can say it, so a page comes back full: the
     genres hidden, and every language of `languages` but those hidden, a pipe being TMDB's OR.
     A genre always shown can bring back what those would drop, so with one set they are left to
-    `hidden.screen` on the answer. `release` is one type instead of those Settings shows. Every
-    list is ranked by popularity, most anticipated first.
+    `hidden.screen` on the answer. `release` is one type instead of those Settings shows. A list
+    is ranked by popularity, most anticipated first, or by `sort` "date", soonest first.
     """
     start, end = window(days, today)
     rescued = _rescues(settings, kind)
@@ -193,7 +194,9 @@ def discover_params(
             language, [] if rescued or not settings.tmdb_hidden_languages else shown
         ),
         "include_adult": "false",
-        "sort_by": "popularity.desc",
+        "sort_by": "popularity.desc"
+        if sort != "date"
+        else ("release_date.asc" if kind == "movie" else "first_air_date.asc"),
     }
     if kind == "movie":
         # Release dates are per region, so a film is upcoming where you are, not anywhere.
@@ -269,6 +272,8 @@ async def discover(settings: db.Settings, kind: Kind, **filters: Any) -> dict[st
         # A show no network airs is one anyone added to TMDB, a fan film or a school project,
         # and never what the list is for.
         titles = [t for t in titles if t["platform"]]
+    if filters.get("sort") == "date":
+        titles.sort(key=lambda t: t["date"] or "9999")
     return {
         "titles": titles,
         "page": data.get("page", 1),
@@ -318,11 +323,17 @@ async def _networks(settings: db.Settings, titles: list[dict[str, Any]]) -> None
 
 
 async def discover_all(settings: db.Settings, **filters: Any) -> dict[str, Any]:
-    """Movies and shows on one page: the same page of each, most anticipated first."""
+    """Movies and shows on one page: the same page of each, most anticipated first, or soonest
+    first for `sort` "date". Each kind is ordered across its own pages, so the two interleave
+    only within a page."""
     films, shows = await asyncio.gather(
         discover(settings, "movie", **filters), discover(settings, "tv", **filters)
     )
-    titles = sorted(films["titles"] + shows["titles"], key=lambda t: -float(t["popularity"]))
+    both = films["titles"] + shows["titles"]
+    if filters.get("sort") == "date":
+        titles = sorted(both, key=lambda t: t["date"] or "9999")
+    else:
+        titles = sorted(both, key=lambda t: -float(t["popularity"]))
     return {
         "titles": titles,
         "page": filters["page"],

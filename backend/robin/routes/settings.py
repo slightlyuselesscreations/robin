@@ -53,6 +53,15 @@ class Notice(BaseModel):
 
 
 Schedule = Annotated[list[Notice], Field(max_length=10)]
+
+
+class Publisher(BaseModel):
+    """A Comic Vine publisher, by its id, named as Comic Vine names it."""
+
+    id: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=200)
+
+
 # Quiet hours, [start, end], or empty for none.
 Quiet = Annotated[list[Hour], Field(max_length=2)]
 
@@ -135,6 +144,7 @@ class SettingsOut(BaseModel):
     comics_schedule: list[Notice]
     screen_schedule: list[Notice]
     books_schedule: list[Notice]
+    comics_digest_publishers: list[Publisher]
     games_quiet: list[int]
     comics_quiet: list[int]
     screen_quiet: list[int]
@@ -228,6 +238,7 @@ class SettingsPatch(BaseModel):
     comics_schedule: Schedule | None = None
     screen_schedule: Schedule | None = None
     books_schedule: Schedule | None = None
+    comics_digest_publishers: list[Publisher] | None = Field(default=None, max_length=100)
     games_quiet: Quiet | None = None
     comics_quiet: Quiet | None = None
     screen_quiet: Quiet | None = None
@@ -306,6 +317,7 @@ def _to_out(s: db.Settings) -> SettingsOut:
         comics_schedule=_schedule(s, "comics"),
         screen_schedule=_schedule(s, "screens"),
         books_schedule=_schedule(s, "books"),
+        comics_digest_publishers=[Publisher(**p) for p in s.comics_digest_publishers],
         games_quiet=s.games_quiet,
         comics_quiet=s.comics_quiet,
         screen_quiet=s.screen_quiet,

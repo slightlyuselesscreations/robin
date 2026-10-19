@@ -192,7 +192,14 @@ function Releases({
   if (category === 'games') {
     items = (releases as Game[]).map((g) => ({
       ...gameItem(g, open('game', g.igdb_id)),
-      menu: <GameMenu igdbId={g.igdb_id} released={g.first_release_date} url={g.url} />,
+      menu: (
+        <GameMenu
+          igdbId={g.igdb_id}
+          released={g.first_release_date}
+          platforms={g.platforms}
+          url={g.url}
+        />
+      ),
     }))
   } else if (category === 'comics') {
     items = (releases as Comic[]).map((c) => ({

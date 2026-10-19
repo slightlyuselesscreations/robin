@@ -85,9 +85,11 @@ async def discover(
     page: int = Query(default=1, ge=1, le=500),
     language: str = Query(default="", pattern=r"^([a-z]{2}|any)?$"),
     release: tmdb.Release | Literal[""] = "",
+    sort: Literal["popularity", "date"] = "popularity",
 ) -> dict[str, Any]:
     """Genres, original languages and release types are the ones kept in Settings.
 
+    `sort` is popularity, most anticipated first, or date, soonest first.
     `language` is one original language instead of those, or `any` for every language.
     `release` is one release type of a movie instead of those. TV is only ever scripted series
     and miniseries. `all` is both kinds, a page of each.
@@ -95,11 +97,11 @@ async def discover(
     settings = db.get_settings()
     if kind == "all":
         page_of = await tmdb.discover_all(
-            settings, days=days, page=page, language=language, release=release
+            settings, days=days, page=page, language=language, release=release, sort=sort
         )
     else:
         page_of = await tmdb.discover(
-            settings, kind, days=days, page=page, language=language, release=release
+            settings, kind, days=days, page=page, language=language, release=release, sort=sort
         )
     await tmdb.star(settings, page_of["titles"], db.favourites("screens"))
     return page_of

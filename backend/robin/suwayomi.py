@@ -67,7 +67,6 @@ mutation($id: Int!) {
   }
 }"""
 
-_ISSUE_NUMBER = re.compile(r"\s*#\d+\S*\s*$")
 # Read Comics Online names a series "Midnight X-Men (2026-)", or "(2020)" for a one shot.
 _YEAR = re.compile(r"\s*\((\d{4})(?:-\d{4}|-)?\)\s*$")
 _WORDS = re.compile(r"[^A-Za-z0-9 ]+")
@@ -79,7 +78,9 @@ class SuwayomiError(upstream.UpstreamError):
 
 def series_title(issue_title: str) -> str:
     """ "Midnight X-Men #1" is the series "Midnight X-Men"."""
-    return _ISSUE_NUMBER.sub("", issue_title).strip()
+    title = issue_title.strip()
+    head, _, last = title.rpartition(" ")
+    return head.strip() if head and re.fullmatch(r"#\d\S*", last) else title
 
 
 def _key(title: str) -> str:

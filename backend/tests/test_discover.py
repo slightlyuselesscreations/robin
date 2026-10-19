@@ -460,3 +460,41 @@ async def test_a_game_not_on_steam_joins_the_pool_by_its_hype(
     monkeypatch.setattr(igdb, "query", query)
     assert await igdb._discover_pool(igdb.SHOWN_PLATFORMS) == [1, 2]
     assert await igdb._discover_pool(igdb.platforms(["playstation", "xbox", "nintendo"])) == [1]
+
+
+async def test_released_starts_discover_on_the_first_of_january(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out_this_year = {"id": 2, "name": "Out", "platforms": [{"id": 6, "abbreviation": "PC"}]}
+    out_this_year["first_release_date"] = igdb._year_start() + DAY
+    out_this_year["release_dates"] = [
+        {"date": out_this_year["first_release_date"], "date_format": 0, "platform": 6}
+    ]
+    asked: list[str] = []
+
+    async def query(endpoint: str, body: str) -> list[dict[str, Any]]:
+        asked.append(body)
+        return [out_this_year] if "first_release_date >=" in body else []
+
+    async def popularity_type() -> int:
+        return 1
+
+    monkeypatch.setattr(igdb, "query", query)
+    monkeypatch.setattr(igdb, "discover_popularity_type", popularity_type)
+
+    assert (await igdb.discover())["games"] == []
+    released = await igdb.discover(released=True)
+    assert [g["igdb_id"] for g in released["games"]] == [2]
+    assert len(asked) == 5, "two calls coming, three with the year's released"
+
+
+async def test_search_asks_for_the_shown_platforms(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked: list[str] = []
+
+    async def query(endpoint: str, body: str) -> list[dict[str, Any]]:
+        asked.append(body)
+        return []
+
+    monkeypatch.setattr(igdb, "query", query)
+    await igdb.search("castlevania", shown=frozenset({6}))
+    assert all("(platforms = (6) | platforms = null)" in body for body in asked)

@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS settings (
     -- Quiet hours per category, [start, end] in local hours, empty for none.
     games_quiet_json         TEXT NOT NULL DEFAULT '[]',
     comics_quiet_json        TEXT NOT NULL DEFAULT '[]',
+    comics_digest_publishers_json TEXT NOT NULL DEFAULT '[]',
     screen_quiet_json        TEXT NOT NULL DEFAULT '[]',
     books_quiet_json         TEXT NOT NULL DEFAULT '[]',
     -- Where notifications go, each {"id", "service", "values", "places"}.

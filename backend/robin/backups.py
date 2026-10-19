@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 import re
 import secrets
 import sqlite3
@@ -146,9 +147,11 @@ def listing() -> list[Backup]:
 
 
 def path_of(name: str) -> Path:
-    if not NAME.match(name) or not (folder() / name).is_file():
+    root = os.path.normpath(folder())
+    full = os.path.normpath(os.path.join(root, name))
+    if not NAME.fullmatch(name) or not full.startswith(root + os.sep) or not os.path.isfile(full):
         raise BackupError("No such backup")
-    return folder() / name
+    return Path(full)
 
 
 def write(settings: db.Settings) -> Backup:

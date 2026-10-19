@@ -13,10 +13,13 @@ async def discover(
     limit: int = Query(default=36, ge=1, le=50),
     offset: int = Query(default=0, ge=0, le=1000),
     platform: igdb.Platform | None = None,
+    released: bool = False,
 ) -> dict[str, Any]:
+    """Coming from tomorrow, or with `released` from the first of January, so a game out this
+    year can be monitored to be grabbed."""
     settings = db.get_settings()
     shown = igdb.platforms(settings.games_hidden_platforms, platform or "")
-    page = await igdb.discover(limit=limit, offset=offset, shown=shown)
+    page = await igdb.discover(limit=limit, offset=offset, shown=shown, released=released)
     games = [g for g in page["games"] if hidden.game(settings, g)]
     return {"games": decorate(games), "next_offset": page["next_offset"]}
 

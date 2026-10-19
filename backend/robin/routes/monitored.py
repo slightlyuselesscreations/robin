@@ -28,7 +28,7 @@ async def list_monitored() -> list[dict[str, Any]]:
 async def start_monitoring(body: MonitorIn, background: BackgroundTasks) -> dict[str, Any]:
     """Track a game. One already out is searched for at once, after the answer goes back."""
     game = await load_game(body.igdb_id)
-    if igdb.out(game):
+    if not igdb.monitorable(db.get_settings(), game):
         raise HTTPException(status_code=409, detail=f"{game['name']} is out already")
     if db.live_request_for(body.igdb_id) is not None:
         raise HTTPException(status_code=409, detail=f"{game['name']} is already monitored")

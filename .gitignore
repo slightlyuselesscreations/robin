@@ -19,6 +19,9 @@ data/
 *.tsbuildinfo
 
 # local only
+dev-keys.json
+dev-password.txt
 CLAUDE.md
 .claude/
 compose.test.yml
+commit.txt

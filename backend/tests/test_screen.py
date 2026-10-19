@@ -38,8 +38,10 @@ def test_a_movie_is_upcoming_where_you_are() -> None:
     query = params("movie")
     assert query["region"] == "US"
     assert (query["release_date.gte"], query["release_date.lte"]) == ("2026-10-07", "2027-01-05")
-    # Most anticipated first, always.
+    # Most anticipated first, unless the page is ordered by date.
     assert query["sort_by"] == params("tv")["sort_by"] == "popularity.desc"
+    assert params("movie", sort="date")["sort_by"] == "release_date.asc"
+    assert params("tv", sort="date")["sort_by"] == "first_air_date.asc"
     # Out nowhere yet, so a film already in cinemas does not come back for its digital release.
     assert query["primary_release_date.gte"] == "2026-10-08"
 

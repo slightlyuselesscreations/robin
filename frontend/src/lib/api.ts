@@ -176,6 +176,8 @@ export type Settings = {
   comics_schedule: Notice[]
   screen_schedule: Notice[]
   books_schedule: Notice[]
+  /** The Comic Vine publishers the weekly #1s digest names, every one while empty. */
+  comics_digest_publishers: { id: number; name: string }[]
   /** Quiet hours, [start, end] in server local hours, empty for none. */
   games_quiet: number[]
   comics_quiet: number[]
@@ -741,6 +743,8 @@ export type ScreenFilters = {
   language: string
   /** One release type of a film, or empty for those kept in Settings. */
   release: ReleaseType | ''
+  /** Most anticipated first, or soonest first. */
+  sort: 'popularity' | 'date'
 }
 
 /** The categories with favourites, and what each can favourite. */
@@ -879,9 +883,9 @@ export const api = {
     })
     return post('/api/auth/passkeys/login', { credential: credential(used) })
   },
-  discover: (limit: number, offset: number, platform: string) =>
+  discover: (limit: number, offset: number, platform: string, released: boolean) =>
     request<DiscoverPage>(
-      `/api/games/discover?limit=${limit}&offset=${offset}${platform ? `&platform=${platform}` : ''}`,
+      `/api/games/discover?limit=${limit}&offset=${offset}${platform ? `&platform=${platform}` : ''}${released ? '&released=true' : ''}`,
     ),
   search: (q: string, limit = 24) =>
     request<Game[]>(`/api/games/search?q=${encodeURIComponent(q)}&limit=${limit}`),
@@ -893,6 +897,7 @@ export const api = {
       days: String(filters.days),
       language: filters.language,
       release: filters.release,
+      sort: filters.sort,
     })
     return request<ScreenPage>(`/api/screens/${kind}/discover?${query}`)
   },

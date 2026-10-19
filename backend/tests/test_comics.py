@@ -167,8 +167,18 @@ def test_the_week_is_the_last_wednesday(today: date, wednesday: date) -> None:
     assert comics.week_of(today) == wednesday
 
 
+def test_the_digest_is_one_block_per_publisher() -> None:
+    body = comics.digest(
+        {
+            "Marvel": [{"title": "Alien vs. X-Men #1"}],
+            "DC Comics": [{"title": "Batman #1"}, {"title": "Superman #1"}],
+        }
+    )
+    assert body == "MARVEL (1)\n• Alien vs. X-Men\n\nDC COMICS (2)\n• Batman\n• Superman"
+
+
 def test_a_long_digest_is_cut_short() -> None:
-    many = [{"title": f"Comic {i} #1", "url": "https://x.test/" + "a" * 80} for i in range(200)]
+    many = {f"Publisher {p}": [{"title": "a" * 80 + " #1"}] * 20 for p in range(10)}
     body = comics.digest(many)
     assert len(body.encode()) < 4096
     assert body.endswith("more")
@@ -196,7 +206,7 @@ async def test_a_weeks_firsts_are_two_calls_with_the_main_publishers_first(
     assert len(asked) == 2
 
 
-async def test_each_issue_is_announced_once_under_its_own_publisher(
+async def test_a_week_is_one_digest_sent_once(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch, delivered: list[dict[str, Any]]
 ) -> None:
     await client.put("/api/settings", json=notify_to(comics="comics"))
@@ -209,15 +219,32 @@ async def test_each_issue_is_announced_once_under_its_own_publisher(
     )
 
     # The Friday of the week, its Wednesday past.
-    assert await comics.notify_new_firsts(FRIDAY) == 2
-    single, batch = delivered
-    assert single["url"].startswith("ntfys://ntfy.test/comics?")
-    assert single["title"] == "Alien vs. X-Men #1"
-    assert "attach=https%3A%2F%2Fcomicvine.test%2Fscale_large%2F1.jpg" in single["url"]
-    assert "Peter Parker" in single["body"]
-    assert batch["title"] == "4 new #1s from DC Comics"
+    assert await comics.notify_new_firsts(FRIDAY) == 1
+    [sent] = delivered
+    assert sent["url"].startswith("ntfys://ntfy.test/comics?")
+    assert sent["title"] == "5 new #1s this week"
+    assert sent["body"].startswith("MARVEL (1)\n")
+    assert "\n\nDC COMICS (4)\n" in sent["body"]
 
     assert await comics.notify_new_firsts(FRIDAY) == 0
+
+
+async def test_the_digest_names_only_the_picked_publishers(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch, delivered: list[dict[str, Any]]
+) -> None:
+    await client.put("/api/settings", json=notify_to(comics="comics"))
+    picked = {"comics_digest_publishers": [{"id": 10, "name": "DC Comics"}]}
+    assert (await client.put("/api/settings", json=picked)).status_code == 200
+    comicvine_stub(
+        monkeypatch,
+        [issue(1, 100), issue(2, 200)],
+        [volume(100, "Alien vs. X-Men", 31, "Marvel"), volume(200, "Batman", 10, "DC Comics")],
+    )
+
+    assert await comics.notify_new_firsts(FRIDAY) == 1
+    [sent] = delivered
+    assert sent["title"] == "1 new #1 this week"
+    assert "MARVEL" not in sent["body"]
 
 
 def test_a_pass_reads_the_weeks_its_schedule_reaches() -> None:

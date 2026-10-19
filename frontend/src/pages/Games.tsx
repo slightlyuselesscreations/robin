@@ -49,10 +49,14 @@ function byMonth(games: Game[]): { month: string; games: Game[] }[] {
   return groups
 }
 
-/** Upcoming games from IGDB, soonest first, a section per release month. */
+/**
+ * Upcoming games from IGDB, soonest first, a section per release month. From January adds the
+ * games out this year, to be monitored and grabbed.
+ */
 export function Games() {
   const [params] = useSearchParams()
-  const controls = usePageControls('games', { view: 'cover', platform: KEPT })
+  const controls = usePageControls('games', { view: 'cover', platform: KEPT, from: 'tomorrow' })
+  const released = controls.values.from === 'january'
   const view = asView(controls.values.view, 'cover')
   const hidden = useSettings().data?.games_hidden_platforms ?? []
   // The page narrows what Settings leaves shown.
@@ -62,8 +66,8 @@ export function Games() {
   const byGame = new Map(monitored.data?.map((m) => [m.igdb_id, m]))
 
   const games = useInfiniteQuery({
-    queryKey: ['games', platform, hidden],
-    queryFn: ({ pageParam }) => api.discover(PAGE_SIZE, pageParam, platform),
+    queryKey: ['games', platform, released, hidden],
+    queryFn: ({ pageParam }) => api.discover(PAGE_SIZE, pageParam, platform, released),
     initialPageParam: 0,
     // The backend reports where to continue, because a page filtered down to a handful of
     // games is not the end of the list.
@@ -94,6 +98,17 @@ export function Games() {
               />
             </Control>
           ) : null}
+          <Control label="From">
+            <Segmented
+              label="From"
+              options={[
+                { value: 'tomorrow', label: 'Tomorrow' },
+                { value: 'january', label: 'January' },
+              ]}
+              value={released ? 'january' : 'tomorrow'}
+              onChange={(from) => controls.set({ from })}
+            />
+          </Control>
         </Options>
       </PageHeader>
 
@@ -117,6 +132,7 @@ export function Games() {
                       <GameMenu
                         igdbId={game.igdb_id}
                         released={game.first_release_date}
+                        platforms={game.platforms}
                         url={game.url}
                       />
                     ),

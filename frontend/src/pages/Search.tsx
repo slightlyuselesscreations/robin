@@ -108,7 +108,14 @@ function GameResults({ term, view }: ResultsProps) {
   const results = useQuery({ queryKey: ['search', term], queryFn: () => api.search(term, 40) })
   const items = (results.data ?? []).map((game) => ({
     ...gameItem(game, withParam(params, 'game', game.igdb_id), byGame.get(game.igdb_id)),
-    menu: <GameMenu igdbId={game.igdb_id} released={game.first_release_date} url={game.url} />,
+    menu: (
+      <GameMenu
+        igdbId={game.igdb_id}
+        released={game.first_release_date}
+        platforms={game.platforms}
+        url={game.url}
+      />
+    ),
   }))
   return (
     <CategoryGroup

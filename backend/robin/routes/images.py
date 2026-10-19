@@ -63,8 +63,17 @@ def _root() -> Path:
     return Path(env.robin_data_dir) / "images"
 
 
+def _inside(*parts: str) -> Path:
+    """The path under the cache root, never above it."""
+    root = os.path.normpath(_root())
+    full = os.path.normpath(os.path.join(root, *parts))
+    if not full.startswith(root + os.sep):
+        raise HTTPException(status_code=400, detail="Unknown image")
+    return Path(full)
+
+
 def _cache_path(size: str, image_id: str) -> Path:
-    return _root() / size / f"{image_id}.jpg"
+    return _inside(size, f"{image_id}.jpg")
 
 
 def _write(path: Path, content: bytes) -> None:
@@ -116,7 +125,7 @@ async def remote(url: str) -> FileResponse | RedirectResponse:
     if suffix not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
         suffix = ".jpg"
     key = hashlib.sha256(url.encode()).hexdigest()
-    path = _root() / "remote" / key[:2] / f"{key}{suffix}"
+    path = _inside("remote", key[:2], f"{key}{suffix}")
 
     if path.exists():
         _served(path)
@@ -141,7 +150,7 @@ async def remote(url: str) -> FileResponse | RedirectResponse:
 
 @router.get("/{size}/{image_id}.jpg")
 async def image(size: str, image_id: str) -> FileResponse:
-    if size not in ALLOWED_SIZES or not IMAGE_ID.match(image_id):
+    if size not in ALLOWED_SIZES or not IMAGE_ID.fullmatch(image_id):
         raise HTTPException(status_code=400, detail="Unknown image size or id")
 
     path = _cache_path(size, image_id)

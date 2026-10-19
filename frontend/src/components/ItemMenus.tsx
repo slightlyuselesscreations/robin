@@ -42,7 +42,8 @@ import {
   typesFor,
   useReminders,
 } from '@/lib/reminders'
-import { outBeforeMonth } from '@/lib/utils'
+import { useSettings } from '@/lib/categories'
+import { gameMonitorable, outBeforeMonth } from '@/lib/utils'
 
 /*
  * What a right click on an item offers beyond opening it, one menu per category. Each reads
@@ -65,16 +66,19 @@ function OutItem({ href, children }: { href: string; children: React.ReactNode }
 export function GameMenu({
   igdbId,
   released,
+  platforms = [],
   url,
 }: {
   igdbId: number
-  /** Its release timestamp: one out before this month offers no Monitor. */
+  /** Its release timestamp and platforms: one out offers Monitor only to be grabbed. */
   released: number | null
+  platforms?: string[]
   url?: string | null
 }) {
   const monitored = useQuery({ queryKey: ['monitored'], queryFn: api.monitored })
   const entry = monitored.data?.find((row) => row.igdb_id === igdbId)
   const { start, stop } = useGameMonitor()
+  const prowlarrReady = useSettings().data?.prowlarr_ready ?? false
   return (
     <>
       {entry ? (
@@ -82,7 +86,7 @@ export function GameMenu({
           <EyeOff />
           Stop monitoring
         </ContextMenuItem>
-      ) : outBeforeMonth(released) ? null : (
+      ) : !gameMonitorable(released, platforms, prowlarrReady) ? null : (
         <ContextMenuItem
           disabled={!monitored.isSuccess}
           onSelect={() => start.mutate({ igdb_id: igdbId })}

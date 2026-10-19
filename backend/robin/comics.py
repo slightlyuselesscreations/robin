@@ -38,9 +38,6 @@ ON_DEMAND_TTL = 4 * 3600
 # How long a week ahead is kept. Comic Vine fills a week in as it comes closer.
 AHEAD_TTL = 24 * 3600
 
-# A publisher with more new #1s than this in a week gets one text digest instead.
-DIGEST_THRESHOLD = 3
-
 # ntfy turns a body over 4096 bytes into an attachment, and most services cut one shorter.
 MAX_BODY_BYTES = 3800
 
@@ -94,18 +91,25 @@ def _text(fragment: str) -> str:
     return " ".join(html.unescape(_TAG.sub(" ", fragment)).split())
 
 
-def digest(comics: list[dict[str, Any]]) -> str:
-    """A numbered list with links, cut short to fit a notification."""
+def digest(by_publisher: dict[str, list[dict[str, Any]]]) -> str:
+    """Each publisher as a heading with its count, its #1s under it, a blank line between
+    publishers, cut short to fit a notification."""
+    total = sum(len(c) for c in by_publisher.values())
     lines: list[str] = []
-    used = 0
-    for i, comic in enumerate(comics, 1):
-        line = f"{i}. {comic['title']}\n   {comic['url']}"
-        cost = len(line.encode("utf-8")) + 1
-        if used + cost > MAX_BODY_BYTES:
-            lines.append(f"...and {len(comics) - i + 1} more")
-            break
-        lines.append(line)
-        used += cost
+    used = told = 0
+    for publisher, comics in by_publisher.items():
+        block = [f"{publisher.upper()} ({len(comics)})"]
+        block += [f"• {c['title'].removesuffix(' #1')}" for c in comics]
+        if lines:
+            block.insert(0, "")
+        for line in block:
+            cost = len(line.encode("utf-8")) + 1
+            if used + cost > MAX_BODY_BYTES:
+                lines.append(f"…and {total - told} more")
+                return "\n".join(lines)
+            lines.append(line)
+            used += cost
+            told += line.startswith("•")
     return "\n".join(lines)
 
 
@@ -377,12 +381,13 @@ def weeks_ahead(today: date, slots: list[tuple[int, int]]) -> list[date]:
 
 
 async def notify_new_firsts(now: datetime | None = None) -> int:
-    """Send each notice of the comics schedule due for a new #1, dated by its week's
-    Wednesday. Returns how many notices were sent.
+    """Send each week's new #1s as one digest, at the first notice of the comics schedule due
+    for its Wednesday. Returns how many digests were sent.
 
-    Runs on the hourly loop. An issue of the current week is still announced after its
-    Wednesday, until the week ends. An issue is marked only once its notice went out, so a
-    failure is retried on the next pass.
+    Runs on the hourly loop. Each #1 is in one digest only, so a later notice of the schedule
+    sends again only for #1s Comic Vine added since. An issue of the current week is still
+    announced after its Wednesday, until the week ends. Issues are marked only once the digest
+    went out, so a failure is retried on the next pass.
     """
     settings = db.get_settings()
     channel = settings.notices("comics")
@@ -402,53 +407,35 @@ async def _announce_week(
     window: notices.Window,
     week: date,
 ) -> int:
-    sent = 0
-    # An issue of a week ahead says when it is out, one already out needs nothing.
-    out = "" if week <= window.today else f" is out {window.relative(week)}"
-    for listed in (await week_listing(week)).values():
-        comics = [c for c in listed if hidden.comic(settings, made(c))]
-        due = [(c, window.pending(week, seen(c), grace=6)) for c in comics]
-        fresh = [(c, d) for c, d in due if d is not None]
-        if not fresh:
+    picked = {str(p["id"]) for p in settings.comics_digest_publishers}
+    fresh: dict[str, list[dict[str, Any]]] = {}
+    for publisher_id, listed in (await week_listing(week)).items():
+        if picked and publisher_id not in picked:
             continue
+        for comic in listed:
+            if hidden.comic(settings, made(comic)) and window.pending(week, seen(comic), grace=6):
+                fresh.setdefault(comic["publisher"], []).append(comic)
+    if not fresh:
+        return 0
 
-        if len(fresh) > DIGEST_THRESHOLD:
-            publisher = fresh[0][0]["publisher"]
-            try:
-                await notify.send(
-                    settings,
-                    channel,
-                    title=f"{len(fresh)} new #1s from {publisher}{out}",
-                    message=digest([c for c, _ in fresh]),
-                    tags="comic_book",
-                )
-            except notify.NotifyError as exc:
-                log.warning("comics: digest for %s failed: %s", publisher, exc)
-                continue
-            for comic, notice in fresh:
-                mark_seen(comic, notice.marker)
-            sent += 1
-            continue
-
-        for comic, notice in fresh:
-            try:
-                found = await detail(comic["id"], week_ttl(week, datetime.now(UTC)))
-                await notify.send(
-                    settings,
-                    channel,
-                    title=f"{comic['title']}{out}",
-                    message=(found or {}).get("synopsis") or comic["publisher"],
-                    tags="comic_book",
-                    click=comic["url"],
-                    attach=comic["cover"],
-                )
-            except (httpx.HTTPError, ValueError, notify.NotifyError) as exc:
-                log.warning("comics: %s failed: %s", comic["title"], exc)
-                continue
-            mark_seen(comic, notice.marker)
-            sent += 1
-
-    return sent
+    count = sum(len(c) for c in fresh.values())
+    firsts = f"{count} new #1s" if count > 1 else "1 new #1"
+    when = "this week" if week <= window.today else f"out {window.relative(week)}"
+    try:
+        await notify.send(
+            settings,
+            channel,
+            title=f"{firsts} {when}",
+            message=digest(fresh),
+            tags="comic_book",
+        )
+    except notify.NotifyError as exc:
+        log.warning("comics: digest for %s failed: %s", week, exc)
+        return 0
+    for comics in fresh.values():
+        for comic in comics:
+            mark_seen(comic, f"*|{db.SENT_ALL}")
+    return 1
 
 
 # ---------------------------------------------------------------- favourites

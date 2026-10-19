@@ -421,10 +421,16 @@ async def search(
     if not safe:
         return []
 
-    scope = f"version_parent = null & game_type = {REAL_GAME_TYPES}"
+    # The platforms are asked for, not filtered after, or a long series fills both limits with
+    # its old console games and a new one with no votes yet never comes back.
+    platforms = ",".join(map(str, sorted(shown)))
+    scope = (
+        f"version_parent = null & game_type = {REAL_GAME_TYPES}"
+        f" & (platforms = ({platforms}) | platforms = null)"
+    )
     fuzzy = f'{LIST_FIELDS} search "{safe}"; where {scope}; limit 30;'
     by_name = (
-        f'{LIST_FIELDS} where name ~ *"{safe}"* & {scope}; sort total_rating_count desc; limit 20;'
+        f'{LIST_FIELDS} where name ~ *"{safe}"* & {scope}; sort total_rating_count desc; limit 50;'
     )
 
     results = await asyncio.gather(
@@ -524,8 +530,14 @@ def _month_start() -> int:
 
 
 def out(game: dict[str, Any]) -> bool:
-    """Out before this month: found by search to be favourited, never monitored."""
+    """Out before this month: found by search to be favourited."""
     return not _current(game, _month_start())
+
+
+def monitorable(settings: db.Settings, game: dict[str, Any]) -> bool:
+    """Coming, or out and on PC with Prowlarr set, the only reason to monitor one out: to grab
+    it once a clean release is listed."""
+    return not out(game) or (settings.prowlarr_ready and PC in (game.get("platforms") or []))
 
 
 def _current(game: dict[str, Any], since: int) -> bool:
@@ -562,19 +574,32 @@ def _sort_key(game: dict[str, Any]) -> tuple[int, int]:
     return (1, 0) if released is None else (0, int(released))
 
 
-async def _discover_pool(shown: frozenset[int]) -> list[int]:
-    """The ids Discover pages through, in popularity order, built in three IGDB calls.
+def _year_start() -> int:
+    """Midnight UTC on the first of January, where Discover begins with released games."""
+    return int(datetime(datetime.now(UTC).year, 1, 1, tzinfo=UTC).timestamp())
+
+
+async def _discover_pool(shown: frozenset[int], released: bool = False) -> list[int]:
+    """The ids Discover pages through, in popularity order, built in three IGDB calls, four
+    with `released`.
 
     Most Wishlisted Upcoming is Steam's wishlist, so a game not on Steam is never in it. IGDB's
-    own hype, its follows before release, ranks the `shown` platforms beside it. The ranking
-    only decides which games are listed. They are served in release order.
+    own hype, its follows before release, ranks the `shown` platforms beside it. `released`
+    adds the games out since the first of January, by the same hype, and starts the list
+    there instead of tomorrow. The ranking only decides which games are listed. They are
+    served in release order.
     """
     type_id = await discover_popularity_type()
-    cache_key = f"{DISCOVER_CACHE_PREFIX}{type_id}:" + ",".join(map(str, sorted(shown)))
+    platforms = ",".join(map(str, sorted(shown)))
+    cache_key = f"{DISCOVER_CACHE_PREFIX}{type_id}:{'year' if released else 'next'}:{platforms}"
+    games_where = (
+        f"{LIST_FIELDS} where platforms = ({platforms})"
+        f" & version_parent = null & game_type = {REAL_GAME_TYPES} & hypes > 0"
+    )
 
     async def build() -> list[int]:
         now = int(datetime.now(UTC).timestamp())
-        primitives, hyped = await asyncio.gather(
+        asked = [
             query(
                 "popularity_primitives",
                 f"fields game_id,value; sort value desc; limit {DISCOVER_POOL};"
@@ -582,12 +607,20 @@ async def _discover_pool(shown: frozenset[int]) -> list[int]:
             ),
             query(
                 "games",
-                f"{LIST_FIELDS} where platforms = ({','.join(map(str, sorted(shown)))})"
-                f" & version_parent = null & game_type = {REAL_GAME_TYPES} & hypes > 0"
-                f" & (first_release_date > {now} | first_release_date = null);"
+                f"{games_where} & (first_release_date > {now} | first_release_date = null);"
                 f" sort hypes desc; limit {DISCOVER_POOL};",
             ),
-        )
+        ]
+        if released:
+            asked.append(
+                query(
+                    "games",
+                    f"{games_where} & first_release_date >= {_year_start()}"
+                    f" & first_release_date <= {now}; sort hypes desc; limit {DISCOVER_POOL};",
+                )
+            )
+        primitives, *lists = await asyncio.gather(*asked)
+        hyped = [g for part in lists for g in part]
         wishlisted = [int(p["game_id"]) for p in primitives]
         raw = []
         if wishlisted:
@@ -598,7 +631,7 @@ async def _discover_pool(shown: frozenset[int]) -> list[int]:
         by_id = {g["igdb_id"]: g for g in (normalise(r) for r in [*hyped, *raw])}
         game_ids = list(dict.fromkeys([*wishlisted, *(int(r["id"]) for r in hyped)]))
 
-        since = _tomorrow()
+        since = _year_start() if released else _tomorrow()
         ranked = [by_id[i] for i in game_ids if i in by_id]
         kept = _once([g for g in ranked if _is_shown(g, since, shown)])
 
@@ -613,10 +646,14 @@ async def _discover_pool(shown: frozenset[int]) -> list[int]:
 
 
 async def discover(
-    limit: int = 36, offset: int = 0, shown: frozenset[int] = SHOWN_PLATFORMS
+    limit: int = 36,
+    offset: int = 0,
+    shown: frozenset[int] = SHOWN_PLATFORMS,
+    released: bool = False,
 ) -> dict[str, Any]:
-    """One page of the Discover list on the `shown` platforms, soonest release first."""
-    pool = await _discover_pool(shown)
+    """One page of the Discover list on the `shown` platforms, soonest release first, from the
+    first of January with `released`."""
+    pool = await _discover_pool(shown, released)
     stored = db.get_games(pool)
     ordered = sorted((stored[i] for i in pool if i in stored), key=_sort_key)
 

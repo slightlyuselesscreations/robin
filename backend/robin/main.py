@@ -83,7 +83,10 @@ async def warm_pages() -> int:
     if settings.igdb_ready:
         offered = get_args(igdb.Platform)
         platform = next((p for p in offered if p == control("games", "platform")), None)
-        pages.append(games_routes.discover(limit=36, offset=0, platform=platform))
+        released = control("games", "from") == "january"
+        pages.append(
+            games_routes.discover(limit=36, offset=0, platform=platform, released=released)
+        )
     if settings.tmdb_ready:
         kinds: tuple[Literal["movie", "tv", "all"], ...] = ("movie", "tv", "all")
         releases: tuple[Literal["theatrical", "digital", ""], ...] = ("theatrical", "digital")
@@ -96,6 +99,7 @@ async def warm_pages() -> int:
                 page=1,
                 language=language if re.fullmatch(r"[a-z]{2}|any", language) else "",
                 release="" if kind == "tv" else pick("screens", "release", releases, ""),
+                sort=pick("screens", "sort", ("popularity", "date"), "popularity"),
             )
         )
     if settings.hardcover_ready:

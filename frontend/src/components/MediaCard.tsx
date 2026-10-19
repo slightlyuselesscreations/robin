@@ -25,7 +25,7 @@ import { LIBRARY_NAME, type Library, type View, imageSrc } from '@/lib/api'
 import type { Item, PlatformTag, Shape } from '@/lib/items'
 import { riseAt } from '@/lib/motion'
 import { useUpdated } from '@/lib/outdated'
-import { cn } from '@/lib/utils'
+import { ahead, cn } from '@/lib/utils'
 
 const ASPECT: Record<Shape, string> = { poster: 'aspect-[3/4]', cover: 'aspect-[2/3]' }
 
@@ -80,7 +80,8 @@ export function Artwork({
 function ItemMenu({ item, children }: { item: Item; children: React.ReactElement }) {
   const navigate = useNavigate()
   const countdown = useAddCountdown()
-  if (!item.menu && !item.countdown) return children
+  const counted = item.countdown && ahead(item.countdown.date) ? item.countdown : null
+  if (!item.menu && !counted) return children
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
@@ -89,8 +90,8 @@ function ItemMenu({ item, children }: { item: Item; children: React.ReactElement
           <SquareArrowOutUpRight />
           Open
         </ContextMenuItem>
-        {item.countdown ? (
-          <ContextMenuItem onSelect={() => item.countdown && countdown.mutate(item.countdown)}>
+        {counted ? (
+          <ContextMenuItem onSelect={() => countdown.mutate(counted)}>
             <Hourglass />
             Countdown
           </ContextMenuItem>

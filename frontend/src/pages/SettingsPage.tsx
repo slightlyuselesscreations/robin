@@ -21,6 +21,7 @@ import {
   ListFilter,
   type LucideIcon,
   LogOut,
+  Newspaper,
   Palette,
   PlugZap,
   Plus,
@@ -2096,7 +2097,7 @@ function MakerFields({ category, mode }: { category: FavouriteCategory; mode: Ma
             category={category}
             kind={kind}
             picked={picked.map((m) => m.source_id)}
-            onPick={(id) => change.mutate({ kind, id })}
+            onPick={({ id }) => change.mutate({ kind, id })}
           />
         </div>
       </Field>
@@ -2117,7 +2118,7 @@ function MakerSearch({
   category: FavouriteCategory
   kind: FavouriteKind
   picked: number[]
-  onPick: (id: number) => void
+  onPick: (entity: { id: number; name: string }) => void
 }) {
   const [term, setTerm] = useState('')
   const [asked, setAsked] = useState('')
@@ -2156,7 +2157,7 @@ function MakerSearch({
                 <CommandItem
                   key={entity.id}
                   value={String(entity.id)}
-                  onSelect={() => (picked.includes(entity.id) ? null : onPick(entity.id))}
+                  onSelect={() => (picked.includes(entity.id) ? null : onPick(entity))}
                 >
                   <Check
                     className={cn(
@@ -2282,11 +2283,60 @@ function ComicsTab({ form, setForm, stored }: TabProps & { stored: Settings }) {
 
       <SettingsGroup title="General" icon={SlidersHorizontal}>
         <NotificationsPanel category="comics" form={form} setForm={setForm} stored={stored} />
+        <Panel
+          title="Weekly digest"
+          icon={Newspaper}
+          note={
+            <>
+              Select the publishers whose #1s it names, <Lit>every one</Lit> while none is selected
+            </>
+          }
+        >
+          <Field label="Publishers">
+            <DigestPublishers
+              picked={form.comics_digest_publishers ?? []}
+              onChange={(comics_digest_publishers) =>
+                setForm({ ...form, comics_digest_publishers })
+              }
+            />
+          </Field>
+        </Panel>
         <FavouritesPanel category="comics" form={form} setForm={setForm} />
       </SettingsGroup>
 
       <SourceGroups category="comics" form={form} setForm={setForm} stored={stored} />
     </>
+  )
+}
+
+/** Comic Vine publishers, searched as a favourite's are, kept with their names. */
+function DigestPublishers({
+  picked,
+  onChange,
+}: {
+  picked: { id: number; name: string }[]
+  onChange: (next: { id: number; name: string }[]) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {picked.map((publisher) => (
+        <button
+          key={publisher.id}
+          type="button"
+          onClick={() => onChange(picked.filter((p) => p.id !== publisher.id))}
+          className={controlClass(true)}
+        >
+          {publisher.name}
+          <X className="size-3" />
+        </button>
+      ))}
+      <MakerSearch
+        category="comics"
+        kind="publisher"
+        picked={picked.map((p) => p.id)}
+        onPick={({ id, name }) => onChange([...picked, { id, name }])}
+      />
+    </div>
   )
 }
 

@@ -25,9 +25,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { GAME_STATE, STATE_LABEL, api, posterUrl, releaseLabel, errorText } from '@/lib/api'
+import { useSettings } from '@/lib/categories'
 import { downloadStage, gameCountdown } from '@/lib/items'
 import { useGameMonitor } from '@/lib/monitor'
-import { controlClass, outBeforeMonth } from '@/lib/utils'
+import { controlClass, gameMonitorable } from '@/lib/utils'
 
 /** The screenshots are the extra this category adds, and the first thing to drop out. */
 export function GameDialog({ igdbId, onClose }: { igdbId: number | null; onClose: () => void }) {
@@ -48,6 +49,7 @@ function Body({ igdbId, onClose }: { igdbId: number; onClose: () => void }) {
   const entry = monitored.data?.find((row) => row.igdb_id === igdbId)
 
   const { start, stop: remove } = useGameMonitor(onClose)
+  const prowlarrReady = useSettings().data?.prowlarr_ready ?? false
 
   // A release PreDB could not vouch for waits for one of these.
   const confirm = useMutation({
@@ -225,7 +227,7 @@ function Body({ igdbId, onClose }: { igdbId: number; onClose: () => void }) {
           }
         >
           <Actions>
-            {entry || !outBeforeMonth(data.first_release_date) ? (
+            {entry || gameMonitorable(data.first_release_date, data.platforms, prowlarrReady) ? (
               <MonitorButton
                 monitored={entry !== undefined}
                 pending={start.isPending || remove.isPending}

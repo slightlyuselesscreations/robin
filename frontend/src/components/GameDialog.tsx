@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, PlayCircle, X } from 'lucide-react'
+import { Check, PlayCircle, Search, X } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
@@ -20,6 +20,7 @@ import {
   OutLink,
   Summary,
 } from '@/components/MediaDialog'
+import { IndexerSearch } from '@/components/IndexerSearch'
 import { Clip, Notice } from '@/components/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -42,6 +43,7 @@ export function GameDialog({ igdbId, onClose }: { igdbId: number | null; onClose
 function Body({ igdbId, onClose }: { igdbId: number; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [zoomed, setZoomed] = useState<string | null>(null)
+  const [searching, setSearching] = useState(false)
 
   const game = useQuery({ queryKey: ['game', igdbId], queryFn: () => api.game(igdbId) })
   const monitored = useQuery({ queryKey: ['monitored'], queryFn: api.monitored })
@@ -188,6 +190,13 @@ function Body({ igdbId, onClose }: { igdbId: number; onClose: () => void }) {
           </div>
         ) : null}
 
+        <IndexerSearch
+          igdbId={igdbId}
+          gameName={data.name}
+          open={searching}
+          onClose={() => setSearching(false)}
+        />
+
         <ImageZoom
           src={zoomed ? posterUrl(zoomed, 'screenshot_huge') : null}
           alt={`${data.name} screenshot`}
@@ -262,6 +271,16 @@ function Body({ igdbId, onClose }: { igdbId: number; onClose: () => void }) {
                   Reject
                 </Button>
               </>
+            ) : null}
+            {prowlarrReady && data.platforms.includes('PC') && entry?.status !== 'matched' ? (
+              <Button
+                variant="ghost"
+                onClick={() => setSearching(true)}
+                className="gap-2 text-ink-dim hover:text-accent"
+              >
+                <Search className="size-4" />
+                Search with Prowlarr
+              </Button>
             ) : null}
             <CountdownButton
               target={gameCountdown(

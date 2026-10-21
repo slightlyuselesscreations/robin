@@ -11,6 +11,7 @@ import contextvars
 import json
 import logging
 import os
+import re
 import sqlite3
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
@@ -40,6 +41,13 @@ def db_path() -> Path:
 
 def now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+# How far ahead a grid of what is coming looks, the same on every page.
+AHEAD_DAYS = 365
+
+# What a grid is ordered by: most anticipated first, or soonest first.
+Sort = Literal["popularity", "date"]
 
 
 def month_start() -> date:
@@ -88,20 +96,12 @@ def init_db() -> None:
         # Comics gained favourites, and with them the publisher.
         for table in ("favourites", "maker_filters"):
             _rebuild(c, schema, table, "'publisher'")
-        for table in (
-            "settings",
-            "games",
-            "requests",
-            "comics",
-            "reminders",
-            "book_reminders",
-            "favourites",
-            "favourite_notices",
-            "account",
-        ):
+        # Every table the schema declares, so a column added to a new one reaches every install.
+        for table in re.findall(r"CREATE TABLE IF NOT EXISTS (\w+) \(", schema):
             _add_missing_columns(c, schema, table)
         _keep_to_hide(c)
         _ntfy_to_destinations(c)
+        _unify_page_defaults(c)
         # After the column is added, which an older database has not had.
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS comics_volume ON comics (volume_id)")
         # Makers were only ever hidden before they could be shown too.
@@ -163,6 +163,42 @@ def _keep_to_hide(c: sqlite3.Connection) -> None:
             "games_platforms_json",
         ),
     )
+
+
+# Page controls saved under the names they had before every grid shared one set: the new name,
+# and old values that read differently now.
+_RENAMED_CONTROLS: dict[str, tuple[str, dict[str, str]]] = {
+    "kind": ("type", {}),
+    "sort": ("order", {}),
+    "order": ("order", {"popular": "popularity"}),
+    "lang": ("language", {}),
+    "from": ("type", {"tomorrow": "upcoming", "january": "out"}),
+}
+
+# Page controls no grid has any more: how far ahead it looks is the same on every grid.
+_DROPPED_CONTROLS = ("days", "window")
+
+
+def _unify_page_defaults(c: sqlite3.Connection) -> None:
+    """Saved page controls take the names every grid shares, Type and Order, a control no grid
+    has any more is dropped, and so are the picks that brought back what Settings hides, `kept`
+    and `any`, a filter only ever narrowing what Settings leaves."""
+    row = c.execute("SELECT page_defaults_json FROM settings WHERE id = 1").fetchone()
+    if row is None:
+        return
+    defaults: dict[str, dict[str, str]] = json.loads(row[0] or "{}")
+    unified: dict[str, dict[str, str]] = {}
+    for page, controls in defaults.items():
+        kept: dict[str, str] = {}
+        for name, value in controls.items():
+            new, values = _RENAMED_CONTROLS.get(name, (name, {}))
+            if name in _DROPPED_CONTROLS or value in ("kept", "any") or new in kept:
+                continue
+            kept[new] = values.get(value, value)
+        if kept:
+            unified[page] = kept
+    if unified != defaults:
+        c.execute("UPDATE settings SET page_defaults_json = ? WHERE id = 1", (json.dumps(unified),))
 
 
 def _ntfy_to_destinations(c: sqlite3.Connection) -> None:
@@ -1551,13 +1587,24 @@ def add_reminder(
 
 
 def update_reminder(
-    reminder_id: int, date: str | None, platform: dict[str, Any] | None = None
+    reminder_id: int,
+    date: str | None,
+    platform: dict[str, Any] | None,
+    title: str,
+    poster: str | None,
 ) -> None:
+    """A reminder as its title now reads, so Home and Monitored follow the source."""
     with conn() as c:
         c.execute(
-            "UPDATE reminders SET date = ?, platform = ? WHERE id = ?",
-            (date, (platform or {}).get("name"), reminder_id),
+            "UPDATE reminders SET date = ?, platform = ?, title = ?, poster = ? WHERE id = ?",
+            (date, (platform or {}).get("name"), title, poster, reminder_id),
         )
+
+
+def set_dated_as(table: Table, row_id: int, dated_as: str) -> None:
+    """What a monitored item's date was last read as, for `notices.date_change`."""
+    with conn() as c:
+        c.execute(f"UPDATE {table} SET dated_as = ? WHERE id = ?", (dated_as, row_id))
 
 
 # ---------------------------------------------------------------- book reminders
@@ -1588,11 +1635,14 @@ def add_book_reminder(
     return dict(row)
 
 
-def update_book_reminder(reminder_id: int, date: str | None, next_title: str | None) -> None:
+def update_book_reminder(
+    reminder_id: int, date: str | None, next_title: str | None, title: str, cover: str | None
+) -> None:
+    """A book reminder as its book now reads, so Home and Monitored follow the source."""
     with conn() as c:
         c.execute(
-            "UPDATE book_reminders SET date = ?, next_title = ? WHERE id = ?",
-            (date, next_title, reminder_id),
+            "UPDATE book_reminders SET date = ?, next_title = ?, title = ?, cover = ? WHERE id = ?",
+            (date, next_title, title, cover, reminder_id),
         )
 
 
@@ -1812,12 +1862,13 @@ def countdowns() -> list[dict[str, Any]]:
 def add_countdown(
     category: str, target: str, title: str, image: str | None, tag: str | None, date: str
 ) -> dict[str, Any]:
-    """Count down to an item. One already counted down to takes the date and tag given."""
+    """Count down to an item. One already counted down to takes what is given."""
     with conn() as c:
         c.execute(
             "INSERT INTO countdowns (category, target, title, image, tag, date, created_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (target)"
-            " DO UPDATE SET date = excluded.date, tag = excluded.tag",
+            " DO UPDATE SET date = excluded.date, tag = excluded.tag, title = excluded.title,"
+            " image = excluded.image",
             (category, target, title, image, tag, date, now()),
         )
         row = c.execute("SELECT * FROM countdowns WHERE target = ?", (target,)).fetchone()

@@ -33,14 +33,7 @@ import {
 } from '@/lib/api'
 import { useArrAdd } from '@/lib/arr'
 import { calendarDay, platformTag } from '@/lib/items'
-import {
-  currentChoice,
-  reminderChoices,
-  screenMonitorable,
-  typesFor,
-  useReminders,
-} from '@/lib/reminders'
-import { outBeforeMonth } from '@/lib/utils'
+import { currentChoice, reminderChoices, typesFor, useReminders } from '@/lib/reminders'
 
 /** One movie or show, opened from the Screens page by `?title=movie-123`. */
 export function ScreenDialog({
@@ -167,7 +160,7 @@ function Detail({ title }: { title: ScreenDetail }) {
 function Remind({ title }: { title: ScreenDetail }) {
   const { ready, mine, choose } = useReminders(title.kind, title.id)
   const arr = useArrAdd(title.kind, title.id)
-  const choices = reminderChoices(title.releases)
+  const choices = reminderChoices(title)
   const offered = choices.filter((c) => !c.disabled)
   const current = currentChoice(mine)
   const fallback = offered.find((c) => c.value === 'both') ?? offered[0]
@@ -196,7 +189,7 @@ function Remind({ title }: { title: ScreenDetail }) {
       }
     >
       <Actions>
-        {!ready ? null : set || screenMonitorable(title) ? (
+        {!ready ? null : set || title.monitorable ? (
           <MonitorButton
             monitored={set}
             pending={busy}
@@ -221,8 +214,6 @@ function Remind({ title }: { title: ScreenDetail }) {
               ) : undefined
             }
           />
-        ) : title.kind === 'movie' && !outBeforeMonth(title.date) ? (
-          <span className="text-2xs text-ink-faint">No release dated in your region yet.</span>
         ) : null}
         {arr.offered ? (
           <Button

@@ -6,7 +6,7 @@ import { BookMenu } from '@/components/ItemMenus'
 import { Items, Skeletons } from '@/components/MediaCard'
 import {
   Control,
-  KeptSelect,
+  FilterSelect,
   NextPage,
   Notice,
   Options,
@@ -20,41 +20,38 @@ import {
 } from '@/components/Page'
 import { type Book, type BookFilters, api, errorText } from '@/lib/api'
 import { useSettings } from '@/lib/categories'
-import { KEPT, WINDOWS, asView, usePageControls, windowDays } from '@/lib/controls'
+import { HEADER_CONTROLS, ORDERS, asView, narrowed, pickOf, usePageControls } from '@/lib/controls'
 import { bookItem, bookRemindersOf } from '@/lib/items'
 import { useScrollPaging } from '@/lib/paging'
-import { filtered } from '@/lib/utils'
 import { withParam } from '@/lib/params'
 
 /** Pages hold forty books. Past this many a scroll is not looking for anything. */
 const MAX_PAGES = 10
 
-const KINDS = [
-  { value: 'fiction', label: 'Fiction', type: 1 },
-  { value: 'nonfiction', label: 'Nonfiction', type: 2 },
+/** The literary types, by Hardcover's id, which Settings hides by. */
+const TYPES = [
+  { value: 'all', label: 'All', id: 0 },
+  { value: 'fiction', label: 'Fiction', id: 1 },
+  { value: 'nonfiction', label: 'Nonfiction', id: 2 },
 ] as const
 
-/** Every control as it starts on a bare `/books`, before the defaults saved for the page. */
-const BUILTIN = { view: 'cover', kind: KEPT, genre: KEPT, days: '90' }
+const ORDER = [ORDERS.popularity, ORDERS.date]
 
-/** The controls as Hardcover is asked, anything no longer offered taking its default. */
-function readFilters(values: typeof BUILTIN): BookFilters {
-  return {
-    days: windowDays(values.days, BUILTIN.days),
-    kind: KINDS.find((k) => k.value === values.kind)?.value ?? '',
-    genre: values.genre === KEPT ? '' : values.genre,
-  }
-}
+/**
+ * Every control as it starts on a bare `/books`, before the defaults saved for the page. A
+ * filter is empty for all of what Settings leaves.
+ */
+const BUILTIN = { view: 'cover', type: 'all', order: 'popularity', genre: '' }
 
 /**
  * Upcoming books from Hardcover, most anticipated first. Literary types, categories and genres
- * are hidden in Settings, the header narrows what is left.
+ * are hidden in Settings, and the type and the filters in Options narrow what is left.
  */
 export function Books() {
   const [params] = useSearchParams()
   const controls = usePageControls('books', BUILTIN)
-  const view = asView(controls.values.view, 'cover')
-  const filters = readFilters(controls.values)
+  const { values } = controls
+  const view = asView(values.view, 'cover')
   const settings = useSettings()
   const hiddenTypes = settings.data?.books_hidden_literary_types ?? []
   const hiddenGenres = settings.data?.books_hidden_genres ?? []
@@ -64,8 +61,10 @@ export function Books() {
     settings.data?.books_hidden_categories,
     settings.data?.books_shown_genres,
   ]
-  // The page narrows what Settings leaves shown.
-  const kinds = KINDS.filter((k) => !hiddenTypes.includes(k.type))
+  // All, then each literary type Settings leaves, offered only while there is more than one.
+  const left = TYPES.filter((t) => t.id === 0 || !hiddenTypes.includes(t.id))
+  const types = left.length > 2 ? left : []
+  const type = types.length ? pickOf(values.type, types) : 'all'
 
   const set = (changes: Partial<typeof BUILTIN>) => controls.set({ ...changes, book: null })
 
@@ -74,7 +73,15 @@ export function Books() {
     queryFn: api.bookGenres,
     staleTime: Infinity,
   })
-  const genreName = (slug: string) => genres.data?.find((g) => g.slug === slug)?.name ?? slug
+  const genreOptions = genres.data
+    ?.filter((g) => !hiddenGenres.includes(g.slug))
+    .map((g) => ({ value: g.slug, label: g.name }))
+  const filters: BookFilters = {
+    kind: type === 'all' ? '' : type,
+    genre: narrowed(values.genre, genreOptions),
+    sort: pickOf(values.order, ORDER),
+  }
+
   const reminders = useQuery({ queryKey: ['book-reminders'], queryFn: api.bookReminders })
 
   const books = useInfiniteQuery({
@@ -104,35 +111,28 @@ export function Books() {
   return (
     <Page>
       <PageHeader title="Books" icon={LibraryBig}>
-        <Options controls={controls}>
+        {types.length ? (
+          <Segmented
+            label="Type"
+            options={types}
+            value={type}
+            onChange={(next) => set({ type: next })}
+          />
+        ) : null}
+        <Segmented
+          label="Order"
+          options={ORDER}
+          value={pickOf(values.order, ORDER)}
+          onChange={(order) => set({ order })}
+        />
+        <Options controls={controls} header={HEADER_CONTROLS}>
           <ViewSwitch value={view} onChange={(next) => set({ view: next })} />
-          {kinds.length > 1 ? (
-            <Control label="Kind">
-              <Segmented
-                label="Kind"
-                options={[{ value: KEPT, label: 'All' }, ...kinds]}
-                value={filters.kind || KEPT}
-                onChange={(kind) => set({ kind })}
-              />
-            </Control>
-          ) : null}
           <Control label="Genre">
-            <KeptSelect
+            <FilterSelect
               value={filters.genre}
-              kept={filtered(genres.data ?? [], hiddenGenres, (g) => g.slug, genreName)}
-              any="Any genre"
-              options={(genres.data ?? [])
-                .filter((g) => !hiddenGenres.includes(g.slug))
-                .map((g) => ({ value: g.slug, label: g.name }))}
-              onChange={(next) => set({ genre: next })}
-            />
-          </Control>
-          <Control label="Window">
-            <Segmented
-              label="Window"
-              options={WINDOWS}
-              value={String(filters.days)}
-              onChange={(days) => set({ days })}
+              all="All genres"
+              options={genreOptions ?? []}
+              onChange={(genre) => set({ genre })}
             />
           </Control>
         </Options>
@@ -143,7 +143,7 @@ export function Books() {
       ) : books.isError ? (
         <Notice tone="bad">{errorText(books.error, 'Hardcover is unreachable')}</Notice>
       ) : list.length === 0 ? (
-        <Notice>Nothing coming in this window.</Notice>
+        <Notice>Nothing coming.</Notice>
       ) : (
         <>
           <Sections dimmed={books.isPlaceholderData}>

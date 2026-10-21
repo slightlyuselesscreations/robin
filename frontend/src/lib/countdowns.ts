@@ -22,7 +22,7 @@ export function useAddCountdown() {
     },
     onSuccess: (made) => toast.success(`Counting down to ${made.title}`),
     onError: (error: unknown) =>
-      toast.error('Cannot count down', {
+      toast.error('Cannot add countdown', {
         description: errorText(error) ?? (error instanceof Error ? error.message : undefined),
       }),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ['countdowns'] }),

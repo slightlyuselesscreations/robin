@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
-from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
@@ -170,7 +169,8 @@ def discover_params(
     language: str,
     release: str,
     languages: tuple[str, ...] | list[str] = (),
-    sort: str = "popularity",
+    sort: db.Sort = "popularity",
+    genre_id: int | None = None,
     today: date | None = None,
 ) -> dict[str, Any]:
     """The TMDB query for one filtered page. Kept apart from the call so a test can read it.
@@ -178,9 +178,14 @@ def discover_params(
     What Settings hides is asked of TMDB where it can say it, so a page comes back full: the
     genres hidden, and every language of `languages` but those hidden, a pipe being TMDB's OR.
     A genre always shown can bring back what those would drop, so with one set they are left to
-    `hidden.screen` on the answer. `release` is one type instead of those Settings shows. A list
+    `hidden.screen` on the answer. The page narrows what is left: `language` one original
+    language, `release` one type, `genre_id` one genre. A pick Settings hides is ignored. A list
     is ranked by popularity, most anticipated first, or by `sort` "date", soonest first.
     """
+    if language == "any" or language in settings.tmdb_hidden_languages:
+        language = ""
+    if release in settings.tmdb_hidden_release_types:
+        release = ""
     start, end = window(days, today)
     rescued = _rescues(settings, kind)
     hidden_genres = (
@@ -198,6 +203,8 @@ def discover_params(
         if sort != "date"
         else ("release_date.asc" if kind == "movie" else "first_air_date.asc"),
     }
+    if genre_id is not None:
+        params["with_genres"] = str(genre_id)
     if kind == "movie":
         # Release dates are per region, so a film is upcoming where you are, not anywhere.
         params.update(
@@ -250,19 +257,29 @@ def _title(raw: dict[str, Any], kind: Kind) -> dict[str, Any]:
     }
 
 
-async def discover(settings: db.Settings, kind: Kind, **filters: Any) -> dict[str, Any]:
+async def discover(
+    settings: db.Settings, kind: Kind, genre: str = "", **filters: Any
+) -> dict[str, Any]:
+    """One filtered page of one kind. `genre` is a genre's name, since movies and shows number
+    theirs apart. A kind with no genre of that name, or one Settings hides, lists nothing."""
+    genre_id = None
+    if genre:
+        hidden_ids = (
+            settings.tmdb_hidden_movie_genres if kind == "movie" else settings.tmdb_hidden_tv_genres
+        )
+        genre_id = next((g["id"] for g in await genres(settings, kind) if g["name"] == genre), None)
+        if genre_id is None or genre_id in hidden_ids:
+            return {"titles": [], "page": filters.get("page", 1), "total_pages": 1}
     codes = (
         [lang["code"] for lang in await languages(settings)]
         if settings.tmdb_hidden_languages
         else []
     )
-    params = discover_params(settings, kind, languages=codes, **filters)
+    params = discover_params(settings, kind, languages=codes, genre_id=genre_id, **filters)
     key = "discover:" + kind + ":" + "&".join(f"{k}={v}" for k, v in sorted(params.items()))
     data = await _cached(settings, key, PAGE_TTL, f"/discover/{kind}", params)
     titles = [_title(raw, kind) for raw in data.get("results", [])]
-    # A language the page picks, or any, stands in for those Settings hides.
-    judged = replace(settings, tmdb_hidden_languages=[]) if filters.get("language") else settings
-    titles = await unhidden(judged, titles)
+    titles = await unhidden(settings, titles)
     if kind == "movie":
         await _date_by_region(
             settings, titles, params["release_date.gte"], filters.get("release", "")
@@ -442,6 +459,29 @@ async def platforms(settings: db.Settings) -> list[dict[str, Any]]:
     return [{"name": p["provider_name"]} for p in data.get("results", [])]
 
 
+# A film the region has not dated a release type for is still awaited while its first release
+# anywhere is no older than this. An older one never got that release where you are.
+AWAITED_DAYS = 365
+
+# A show still to air more of: one with no next season dated is monitored while TMDB says so.
+RETURNING = ("Returning Series", "In Production", "Planned")
+
+
+def open_releases(film: dict[str, Any], region: str, today: str, kept: list[str]) -> list[str]:
+    """The kept release types a film can be monitored for: one the region has dated from today
+    on, or one it has not dated at all while the film is still awaited, first released anywhere
+    within `AWAITED_DAYS` or not yet. One the region has already had is out."""
+    first = str(film.get("release_date") or "")[:10]
+    since = (date.fromisoformat(today) - timedelta(days=AWAITED_DAYS)).isoformat()
+    awaited = not first or first >= since
+    found = []
+    for name in kept:
+        entry, _ = _regional_release(film, region, today, RELEASE_TYPES[name])
+        if entry["release_date"][:10] >= today if entry else awaited:
+            found.append(name)
+    return found
+
+
 def regional_releases(
     film: dict[str, Any],
     region: str,
@@ -522,6 +562,8 @@ async def title(settings: db.Settings, kind: Kind, tmdb_id: int) -> dict[str, An
             found = _release(entry, raw, region, catalogue)
             when, base["release"], base["platform"] = found["date"], found["tag"], found["platform"]
         releases = regional_releases(raw, region, today, kept_releases(settings), catalogue)
+        opened = open_releases(raw, region, today, kept_releases(settings))
+        monitorable = bool(opened)
         companies = [_ref(c) for c in raw.get("production_companies", [])]
         runtime = raw.get("runtime") or None
         imdb = raw.get("imdb_id") or None
@@ -531,7 +573,9 @@ async def title(settings: db.Settings, kind: Kind, tmdb_id: int) -> dict[str, An
             "rating", ""
         )
         upcoming = raw.get("next_episode_to_air")
-        releases = []
+        releases, opened = [], []
+        premiere = (upcoming or {}).get("episode_number") == 1 and bool(upcoming.get("air_date"))
+        monitorable = premiere or raw.get("status") in RETURNING
         when = (upcoming or {}).get("air_date") or base["date"]
         base["next_episode"] = _episode(upcoming) if upcoming else None
         base["platform"] = network(raw)
@@ -552,6 +596,10 @@ async def title(settings: db.Settings, kind: Kind, tmdb_id: int) -> dict[str, An
         "seasons": raw.get("number_of_seasons"),
         # A film's kept release types with a date in the region from today, each one a reminder.
         "releases": releases,
+        # A film's kept release types it can be monitored for, dated or still awaited.
+        "open_releases": opened,
+        # Whether it has anything ahead to monitor, as `open_releases` and `RETURNING` say.
+        "monitorable": monitorable,
         "trailer": f"https://www.youtube.com/watch?v={trailer['key']}" if trailer else None,
         "watch": {
             "stream": [p["provider_name"] for p in watch.get("flatrate", [])],

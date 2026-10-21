@@ -260,6 +260,8 @@ def held(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, int]]:
             "date": "2026-12-01",
             "platform": None,
             "releases": [release] if dated else [],
+            "open_releases": ["digital"],
+            "monitorable": True,
             "next_episode": {"episode": 1, "date": "2026-12-01"} if dated else None,
         }
 
@@ -297,7 +299,8 @@ async def test_a_show_waits_for_its_next_season_to_be_dated(held: list[tuple[str
 
     # The premiere airs and no next one is dated: the show is let go until one is.
     UNDATED.add(1401)
-    db.update_reminder(next(r["id"] for r in db.rows("reminders") if r["tmdb_id"] == 1401), None)
+    row = next(r for r in db.rows("reminders") if r["tmdb_id"] == 1401)
+    db.update_reminder(int(row["id"]), None, None, row["title"], row["poster"])
     await arr.monitor_library()
     assert "tv-1401" not in monitored()
     UNDATED.discard(1401)

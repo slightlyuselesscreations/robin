@@ -56,7 +56,7 @@ class RateLimited(UpstreamError):
 
 # ---------------------------------------------------------------- source limits
 
-Source = Literal["igdb", "tmdb", "hardcover", "comicvine", "predb"]
+Source = Literal["igdb", "tmdb", "hardcover", "comicvine", "predb", "github"]
 
 
 @dataclass(frozen=True)
@@ -85,6 +85,8 @@ LIMITS: dict[Source, Limit] = {
     "comicvine": Limit("Comic Vine", 1, 1.0, 1, frozenset({420, 429}), 3600, 86400),
     # PreDB.net publishes 30 a minute and blocks an address that overloads it.
     "predb": Limit("PreDB", 20, 60.0, 1, frozenset({429}), 60, 3600),
+    # GitHub publishes 60 an hour for an address without a token, refused with 403 or 429.
+    "github": Limit("GitHub", 30, 3600.0, 1, frozenset({403, 429}), 3600, 86400),
 }
 
 # Never wait longer than this on a Retry-After, whatever the source says.
@@ -157,7 +159,7 @@ def _seconds(retry_after: str | None) -> float | None:
         pass
     try:
         when = parsedate_to_datetime(retry_after)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if when.tzinfo is None:
         when = when.replace(tzinfo=UTC)

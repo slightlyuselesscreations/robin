@@ -50,3 +50,17 @@ def test_rows_it_cannot_keep_leave_the_table_as_it_was() -> None:
 def test_the_database_runs_in_wal() -> None:
     with db.conn() as c:
         assert c.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+def test_every_table_gains_the_columns_the_schema_added() -> None:
+    """A countdowns table from before `tag` takes it on the next start."""
+    with db.conn() as c:
+        c.execute("DROP TABLE countdowns")
+        c.execute(
+            "CREATE TABLE countdowns (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL,"
+            " target TEXT NOT NULL UNIQUE, title TEXT NOT NULL, image TEXT, date TEXT NOT NULL,"
+            " created_at TEXT NOT NULL)"
+        )
+    db.init_db()
+    made = db.add_countdown("screens", "title=movie-1", "Dune", None, "Cinema", "2026-12-16")
+    assert made["tag"] == "Cinema"

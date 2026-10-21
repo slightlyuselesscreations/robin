@@ -26,7 +26,7 @@ from argon2.low_level import Type, hash_secret_raw
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from robin import __version__, auth, db
+from robin import __version__, auth, db, updates
 from robin.config import env
 
 log = logging.getLogger(__name__)
@@ -95,15 +95,11 @@ def _header(blob: bytes) -> tuple[dict[str, Any], int]:
     return header, end
 
 
-def _release(version: str) -> tuple[int, ...]:
-    return tuple(int(n) for n in re.findall(r"\d+", version)[:3])
-
-
 def unseal(blob: bytes, passphrase: str) -> bytes:
     header, end = _header(blob)
     if not isinstance(header.get("version"), str):
         raise BackupError("Not a Robin backup")
-    if _release(header["version"]) > _release(__version__):
+    if updates.release(header["version"]) > updates.release(__version__):
         raise BackupError(f"Made by Robin {header['version']}, update Robin first")
     key = _key(passphrase, base64.b64decode(header["salt"]), header["kdf"])
     try:
@@ -140,7 +136,7 @@ def listing() -> list[Backup]:
         try:
             with path.open("rb") as f:
                 header, _ = _header(f.read(4096))
-        except (OSError, BackupError, KeyError):
+        except OSError, BackupError, KeyError:
             continue
         found.append(Backup(path.name, path.stat().st_size, header["version"], header["created"]))
     return sorted(found, key=lambda b: b.name, reverse=True)

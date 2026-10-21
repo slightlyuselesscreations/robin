@@ -18,6 +18,8 @@ export type PageControls<T extends Controls> = {
   set: (changes: Partial<Record<keyof T, string | null>> & Record<string, string | null>) => void
   /** A control shows something other than the page's default. */
   changed: boolean
+  /** One of `keys` shows something other than the page's default. */
+  differs: (keys: string[]) => boolean
   /** Make what the controls show now the page's default. */
   save: () => void
   saving: boolean
@@ -26,7 +28,7 @@ export type PageControls<T extends Controls> = {
 }
 
 /**
- * The display mode, kind and filters of one page. Each reads from the address, then the
+ * The display mode, type, order and filters of one page. Each reads from the address, then the
  * defaults saved for the page in `page_defaults`, then `builtin`, so back and forward step
  * through what was looked at and a bare link opens the page as it was saved.
  */
@@ -38,7 +40,8 @@ export function usePageControls<T extends Controls>(page: string, builtin: T): P
   const saved = settings.data?.page_defaults[page] ?? {}
   const defaults = Object.fromEntries(keys.map((key) => [key, saved[key] ?? builtin[key]])) as T
   const values = Object.fromEntries(keys.map((key) => [key, params.get(key) ?? defaults[key]])) as T
-  const changed = keys.some((key) => values[key] !== defaults[key])
+  const differs = (names: string[]) =>
+    keys.some((key) => names.includes(key) && values[key] !== defaults[key])
 
   const write = (changes: Record<string, string | null>) => {
     const next = new URLSearchParams(params)
@@ -65,7 +68,8 @@ export function usePageControls<T extends Controls>(page: string, builtin: T): P
   return {
     values,
     set: (changes) => write(changes as Record<string, string | null>),
-    changed,
+    changed: differs(keys),
+    differs,
     save: () => {
       // Only what differs from the page's own default is kept, so a later change to it applies.
       const own = Object.fromEntries(
@@ -88,20 +92,29 @@ export function asView(value: string, fallback: View): View {
   return VIEWS.find((view) => view === value) ?? fallback
 }
 
-/** How far ahead a page of upcoming items looks. */
-export const WINDOWS = [
-  { value: '30', label: '30 days' },
-  { value: '90', label: '3 months' },
-  { value: '180', label: '6 months' },
-  { value: '365', label: 'A year' },
-]
+/** The controls a grid sets in its header, beside `Options` rather than in it. */
+export const HEADER_CONTROLS = ['type', 'order']
 
-/** A window as days, anything no longer offered taking `fallback`. */
-export function windowDays(value: string, fallback: string): number {
-  return Number(WINDOWS.find((w) => w.value === value)?.value ?? fallback)
+/**
+ * What a grid is ordered by, named the same on every page. Each page offers the ones its source
+ * can order by, in the header beside its Type.
+ */
+export const ORDERS = {
+  popularity: { value: 'popularity', label: 'By popularity' },
+  date: { value: 'date', label: 'By date' },
+  publisher: { value: 'publisher', label: 'By publisher' },
+  title: { value: 'title', label: 'By title' },
+} as const
+
+/** One of `offered` read from a control, its first when it is not one. */
+export function pickOf<T extends string>(value: string, offered: readonly { value: T }[]): T {
+  return offered.find((o) => o.value === value)?.value ?? offered[0].value
 }
 
-// What Settings keeps and every value, as a picker names them. Radix Select reserves the empty
-// string, so neither can be it.
-export const KEPT = 'kept'
-export const ANY = 'any'
+/**
+ * A filter's pick while Settings still leaves it, else empty, which is all of it. Kept as it is
+ * while the options are still on their way, so a page does not ask twice.
+ */
+export function narrowed(value: string, options: { value: string }[] | undefined): string {
+  return !options || options.some((o) => o.value === value) ? value : ''
+}

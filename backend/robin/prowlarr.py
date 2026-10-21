@@ -89,6 +89,34 @@ async def raw(term: str) -> list[dict[str, Any]]:
     return [r for r in resp.json() if isinstance(r, dict)]
 
 
+async def search(term: str) -> list[dict[str, Any]]:
+    """Every PC game release the chosen indexers have for a term, best seeded first, shaped
+    so nothing that carries Prowlarr's key goes out."""
+    releases = [_shape(r) for r in await raw(term)]
+    releases.sort(key=lambda r: (-r["seeders"], r["age"]))
+    return releases
+
+
+def _shape(release: dict[str, Any]) -> dict[str, Any]:
+    """The fields a release is picked by, and the two a grab finds it again by. Seeders is null
+    on a usenet result and reads as zero, so it still sorts."""
+    return {
+        "guid": release.get("guid", ""),
+        "indexer_id": int(release.get("indexerId", 0)),
+        "indexer": release.get("indexer", ""),
+        "title": release.get("title", ""),
+        "size": int(release.get("size") or 0),
+        "seeders": int(release.get("seeders") or 0),
+        "leechers": int(release.get("leechers") or 0),
+        "age": int(release.get("age") or 0),
+        "info_url": release.get("infoUrl") or None,
+        # Lower cased, since indexers do not agree on the casing they announce.
+        "flags": sorted(
+            {str(f).lower() for f in release.get("indexerFlags") or [] if isinstance(f, str)}
+        ),
+    }
+
+
 async def torrent(release: dict[str, Any]) -> str | bytes:
     """A release's magnet link, or its .torrent file fetched through Prowlarr, so the download
     client never needs to reach Prowlarr itself. Prowlarr answers a download whose indexer

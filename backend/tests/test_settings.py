@@ -122,6 +122,24 @@ async def test_page_defaults_are_kept(client: AsyncClient) -> None:
     assert (await client.put("/api/settings", json={"page_defaults": bad})).status_code == 422
 
 
+def test_saved_page_controls_take_the_shared_names() -> None:
+    db.save_settings(
+        {
+            "page_defaults": {
+                "screens": {"kind": "tv", "days": "30", "sort": "popularity", "lang": "any"},
+                "games": {"from": "january", "platform": "kept"},
+                "monitored": {"type": "games"},
+            }
+        }
+    )
+    db.init_db()
+    assert db.get_settings().page_defaults == {
+        "screens": {"type": "tv", "order": "popularity"},
+        "games": {"type": "out"},
+        "monitored": {"type": "games"},
+    }
+
+
 async def test_health_reports_what_is_not_set_up(client: AsyncClient) -> None:
     body = (await client.get("/api/settings/health", params={"refresh": True})).json()
     assert body["suwayomi"] == {"state": "unset", "error": "", "until": None}

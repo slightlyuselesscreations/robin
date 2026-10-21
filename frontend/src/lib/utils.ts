@@ -60,18 +60,3 @@ export function controlClass(active = false) {
       : 'border-line bg-surface text-ink-dim hover:border-line-strong hover:text-ink',
   )
 }
-
-/**
- * The name of what Settings leaves of a long list, for `KeptSelect`: the few shown once most
- * are hidden, else what is hidden, and nothing while nothing is.
- */
-export function filtered<T>(
-  all: T[],
-  hidden: string[],
-  code: (item: T) => string,
-  name: (code: string) => string,
-): string[] {
-  if (!hidden.length) return []
-  const shown = all.map(code).filter((c) => !hidden.includes(c))
-  return hidden.length > all.length / 2 ? shown.map(name) : [`Not ${hidden.map(name).join(', ')}`]
-}

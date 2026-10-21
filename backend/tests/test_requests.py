@@ -402,17 +402,15 @@ async def test_freeleech_only_is_a_setting(client: AsyncClient, indexers: dict[s
     assert await grabs.rss_sync() == 1
 
 
-async def test_a_release_from_before_the_game_is_another_game(
+async def test_a_release_listed_before_the_game_is_out_is_grabbed(
     client: AsyncClient, indexers: dict[str, Any]
 ) -> None:
-    """Cyberpunk 2077 was out on 10 December 2020. A Cyberpunk.2077 from 2012 is not it."""
-    indexers["releases"] = [release("Cyberpunk.2077-RUNE", published="2012-01-01T00:00:00Z")]
-    indexers["pres"] = {"Cyberpunk.2077-RUNE": 0}
+    """Cyberpunk 2077 was out on 10 December 2020. One listed a week before is still grabbed."""
     await client.post("/api/monitored", json={"igdb_id": 1877})
-    assert grabbed(indexers) == []
-
-    indexers["releases"] = [release("Cyberpunk.2077-RUNE", published=f"{DAY}T03:00:00Z")]
+    indexers["releases"] = [release("Cyberpunk.2077-RUNE", published="2020-12-03T00:00:00Z")]
+    indexers["pres"] = {"Cyberpunk.2077-RUNE": 0}
     assert await grabs.rss_sync() == 1
+    assert grabbed(indexers) == ["Cyberpunk.2077-RUNE"]
 
 
 async def test_a_game_not_out_is_not_searched_but_is_synced(

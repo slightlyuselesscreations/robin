@@ -63,18 +63,17 @@ async def search(q: str = Query(min_length=1, max_length=100)) -> list[dict[str,
 
 @router.get("/discover")
 async def discover(
-    days: int = Query(default=90, ge=1, le=730),
     page: int = Query(default=1, ge=1, le=100),
     kind: hardcover.Kind = "",
     genre: str = Query(default="", pattern=r"^[a-z0-9-]*$", max_length=60),
+    sort: db.Sort = "popularity",
 ) -> dict[str, Any]:
-    """Literary types, categories and genres are the ones kept in Settings.
-
-    `kind` is fiction or nonfiction instead of the kept types, `genre` one genre slug instead
-    of the kept genres, or `any` for every genre.
+    """What Settings leaves of literary types, categories and genres, narrowed by the page:
+    `kind` fiction or nonfiction, `genre` one genre slug. `sort` is popularity, most
+    anticipated first, or date, soonest first.
     """
     page_of = await hardcover.discover(
-        db.get_settings(), days=days, page=page, kind=kind, genre=genre
+        db.get_settings(), days=db.AHEAD_DAYS, page=page, kind=kind, genre=genre, sort=sort
     )
     hardcover.star(page_of["books"], db.favourites("books"))
     return page_of

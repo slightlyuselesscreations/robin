@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 
-from robin import db, hardcover, igdb, reminders, tmdb
+from robin import db, hardcover, igdb, tmdb
 from tests.conftest import notify_to
 
 PAST = "2019-11-27"
@@ -38,22 +38,36 @@ async def test_search_finds_titles_out_before_this_month(monkeypatch: pytest.Mon
     assert [g["igdb_id"] for g in await igdb.search("old game")] == [7]
 
 
+TODAY = "2026-10-10"
+
+
+def film(first: str | None, *regional: tuple[int, str]) -> dict[str, Any]:
+    """A film first released anywhere on `first`, with its release types and days in the US."""
+    dates = [{"type": kind, "release_date": f"{day}T00:00:00.000Z"} for kind, day in regional]
+    return {
+        "release_date": first,
+        "release_dates": {"results": [{"iso_3166_1": "US", "release_dates": dates}]},
+    }
+
+
 @pytest.mark.parametrize(
-    ("kind", "detail", "expected"),
+    ("found", "expected", "why"),
     [
-        ("movie", {"releases": [{"date": AHEAD}]}, True),
-        ("movie", {"releases": []}, False),
-        ("tv", {"next_episode": {"episode": 1, "date": AHEAD}, "date": AHEAD}, True),
-        ("tv", {"next_episode": {"episode": 4, "date": AHEAD}, "date": AHEAD}, False),
-        ("tv", {"next_episode": None, "date": PAST}, False),
-        ("tv", {"next_episode": None, "date": AHEAD}, True),
-        ("tv", {"next_episode": None, "date": None}, True),
+        (film("2026-12-01", (3, "2026-12-01")), ["theatrical", "digital"], "both still to come"),
+        (film("2026-09-01", (3, "2026-09-01")), ["digital"], "in cinemas already"),
+        (
+            film("2026-09-01", (3, "2026-09-01"), (4, "2026-10-01")),
+            [],
+            "out in cinemas and digitally",
+        ),
+        (film(None), ["theatrical", "digital"], "announced, dated nowhere yet"),
+        (film("2019-11-27"), [], "dated nowhere here and out years ago"),
     ],
 )
-def test_only_a_title_with_something_ahead_is_monitorable(
-    kind: str, detail: dict[str, Any], expected: bool
+def test_a_film_is_monitored_for_what_the_region_has_not_had(
+    found: dict[str, Any], expected: list[str], why: str
 ) -> None:
-    assert reminders.monitorable(kind, detail) is expected
+    assert tmdb.open_releases(found, "US", TODAY, ["theatrical", "digital"]) == expected, why
 
 
 async def test_a_game_out_before_this_month_is_never_monitored(client: AsyncClient) -> None:
@@ -77,6 +91,8 @@ async def test_a_show_with_no_season_ahead_is_never_monitored(
             "platform": None,
             "poster": None,
             "releases": [],
+            "open_releases": [],
+            "monitorable": False,
         }
 
     monkeypatch.setattr(tmdb, "title", title)

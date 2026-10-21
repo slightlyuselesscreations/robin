@@ -463,14 +463,19 @@ export function Items({
   )
 }
 
-/** The robin in flight over a grid on its way. */
-export function GridLoading() {
+/** The robin in flight beside a line, over a grid on its way or one still to come. */
+export function FlightNotice({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-center gap-2.5 px-4 py-3 text-xs text-ink-faint">
       <FlyingLogo small />
-      The grid is loading, please keep flying
+      {children}
     </div>
   )
+}
+
+/** The robin in flight over a grid on its way. */
+export function GridLoading() {
+  return <FlightNotice>The grid is loading, please keep flying</FlightNotice>
 }
 
 export function Skeletons({ shape, count }: { shape: Shape; count: number }) {

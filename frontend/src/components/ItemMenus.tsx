@@ -35,13 +35,7 @@ import { useBookReminders, useShelf } from '@/lib/bookReminders'
 import { SOURCE, useFavourite, useMakerFilter } from '@/lib/favourites'
 import { comicMonitorOf, fromComicVine } from '@/lib/items'
 import { useAddSeries, useComicMonitor, useGameMonitor } from '@/lib/monitor'
-import {
-  currentChoice,
-  reminderChoices,
-  screenMonitorable,
-  typesFor,
-  useReminders,
-} from '@/lib/reminders'
+import { currentChoice, reminderChoices, typesFor, useReminders } from '@/lib/reminders'
 import { useSettings } from '@/lib/categories'
 import { gameMonitorable, outBeforeMonth } from '@/lib/utils'
 
@@ -154,9 +148,9 @@ export function ScreenMenu({ kind, id }: { kind: ScreenKind; id: number }) {
     staleTime: 60 * 60_000,
   })
   const set = mine.length > 0
-  const choices = reminderChoices(detail.data?.releases ?? [])
+  const choices = reminderChoices(detail.data ?? { releases: [], open_releases: [] })
   // Hidden once the title is read and has nothing ahead, which a film out already never has.
-  const offered = set || !detail.data || screenMonitorable(detail.data)
+  const offered = set || !detail.data || detail.data.monitorable
   return (
     <>
       {ready && kind === 'movie' && offered ? (
@@ -192,7 +186,7 @@ export function ScreenMenu({ kind, id }: { kind: ScreenKind; id: number }) {
           </ContextMenuSubContent>
         </ContextMenuSub>
       ) : null}
-      {ready && kind === 'tv' && !set && detail.data && screenMonitorable(detail.data) ? (
+      {ready && kind === 'tv' && !set && detail.data?.monitorable ? (
         <ContextMenuItem onSelect={() => choose.mutate([undefined])}>
           <Eye />
           Monitor

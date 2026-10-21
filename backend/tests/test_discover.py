@@ -428,7 +428,9 @@ def test_a_game_igdb_has_no_counts_for_ranks_at_zero() -> None:
 def test_the_page_picks_a_platform_among_what_settings_shows() -> None:
     assert igdb.platforms([]) == igdb.SHOWN_PLATFORMS, "hiding none shows all"
     assert igdb.platforms(["playstation", "nintendo"]) == {6, 49, 169}
-    assert igdb.platforms(["playstation", "xbox", "nintendo"], "nintendo") == {130, 508}
+    assert igdb.platforms(["playstation", "xbox"], "nintendo") == {130, 508}
+    # The page narrows what Settings shows, never back to a family it hides.
+    assert igdb.platforms(["nintendo"], "nintendo") == igdb.platforms(["nintendo"])
     switch = game(platforms=[{"id": 130}])
     assert (
         igdb._is_shown(switch, SINCE, igdb.platforms(["playstation", "xbox", "nintendo"])) is False
@@ -482,10 +484,10 @@ async def test_released_starts_discover_on_the_first_of_january(
     monkeypatch.setattr(igdb, "query", query)
     monkeypatch.setattr(igdb, "discover_popularity_type", popularity_type)
 
-    assert (await igdb.discover())["games"] == []
-    released = await igdb.discover(released=True)
-    assert [g["igdb_id"] for g in released["games"]] == [2]
-    assert len(asked) == 5, "two calls coming, three with the year's released"
+    out = await igdb.discover(game_type="out")
+    assert [g["igdb_id"] for g in out["games"]] == [2]
+    assert len(asked) == 3, "the wishlist, what is coming, and what came out this year"
+    assert (await igdb.discover())["games"] == [], "what is out is not upcoming"
 
 
 async def test_search_asks_for_the_shown_platforms(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -498,3 +500,38 @@ async def test_search_asks_for_the_shown_platforms(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(igdb, "query", query)
     await igdb.search("castlevania", shown=frozenset({6}))
     assert all("(platforms = (6) | platforms = null)" in body for body in asked)
+
+
+async def test_the_page_narrows_and_orders_the_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    tomorrow = igdb._tomorrow()
+    games: dict[int, dict[str, Any]] = {
+        1: {"igdb_id": 1, "first_release_date": tomorrow + DAY, "genres": ["RPG"], "popularity": 1},
+        2: {
+            "igdb_id": 2,
+            "first_release_date": tomorrow + 200 * DAY,
+            "genres": ["Shooter"],
+            "popularity": 9,
+        },
+        3: {"igdb_id": 3, "first_release_date": None, "genres": ["RPG"], "popularity": 5},
+        # Out since January, which only the year's pool holds.
+        4: {
+            "igdb_id": 4,
+            "first_release_date": tomorrow - DAY,
+            "genres": ["RPG"],
+            "popularity": 2,
+        },
+    }
+
+    async def pool(shown: frozenset[int], released: bool = False) -> list[int]:
+        return [1, 2, 3, 4] if released else [1, 2, 3]
+
+    monkeypatch.setattr(igdb, "_discover_pool", pool)
+    monkeypatch.setattr(db, "get_games", lambda ids: {i: games[i] for i in ids})
+
+    async def ids(**filters: Any) -> list[int]:
+        return [g["igdb_id"] for g in (await igdb.discover(**filters))["games"]]
+
+    assert await ids() == [1, 2, 3], "upcoming, soonest first, undated last"
+    assert await ids(sort="popularity") == [2, 3, 1]
+    assert await ids(genre="RPG") == [1, 3]
+    assert await ids(game_type="out") == [4]

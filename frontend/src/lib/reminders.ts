@@ -13,7 +13,6 @@ import {
 import { askArrRemove, heldOf, useLibrary } from '@/lib/arr'
 import { useSettings } from '@/lib/categories'
 import { calendarDay } from '@/lib/items'
-import { outBeforeMonth } from '@/lib/utils'
 
 /** What a film's reminder can be for: one release type, or both. */
 export type ReminderChoice = ReleaseType | 'both'
@@ -25,23 +24,15 @@ const CHOICE_LABEL: Record<ReminderChoice, string> = {
 }
 
 /**
- * The choices a film offers, each with the release types it sets. One the region has no date
- * for is offered disabled, and both needs both.
+ * The choices a film offers, each with the release types it sets. One it cannot be monitored
+ * for, out already in the region, is offered disabled, and both needs both. One not dated yet
+ * is offered undated, and waits for its date.
  */
-/**
- * Whether a title has something ahead to monitor: a film a release dated in the region, a show
- * a season premiere dated or a first episode from this month on.
- */
-export function screenMonitorable(title: ScreenDetail): boolean {
-  if (title.kind === 'movie') return title.releases.length > 0
-  if (title.next_episode) return title.next_episode.episode === 1
-  return !outBeforeMonth(title.date)
-}
-
 export function reminderChoices(
-  releases: ScreenDetail['releases'],
+  title: Pick<ScreenDetail, 'releases' | 'open_releases'>,
 ): { value: ReminderChoice; label: string; types: ReleaseType[]; disabled: boolean }[] {
-  const dated = new Map(releases.map((r) => [r.type, r]))
+  const dated = new Map(title.releases.map((r) => [r.type, r]))
+  const open = (type: ReleaseType) => title.open_releases.includes(type)
   const one = (type: ReleaseType) => {
     const release = dated.get(type)
     const where = release?.platform ? `${release.platform.name}, ` : ''
@@ -49,9 +40,9 @@ export function reminderChoices(
       value: type,
       label: release
         ? `${CHOICE_LABEL[type]} · ${where}${calendarDay(release.date)}`
-        : CHOICE_LABEL[type],
+        : `${CHOICE_LABEL[type]} · No date`,
       types: [type],
-      disabled: !release,
+      disabled: !open(type),
     }
   }
   return [
@@ -61,7 +52,7 @@ export function reminderChoices(
       value: 'both',
       label: CHOICE_LABEL.both,
       types: ['theatrical', 'digital'],
-      disabled: !(dated.has('theatrical') && dated.has('digital')),
+      disabled: !(open('theatrical') && open('digital')),
     },
   ]
 }

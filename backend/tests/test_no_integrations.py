@@ -66,7 +66,9 @@ async def test_every_check_stays_quiet_with_a_destination_and_no_source(
     [
         "/api/games/discover",
         "/api/games/search?q=cyberpunk",
+        "/api/games/genres",
         "/api/prowlarr/indexers",
+        "/api/prowlarr/search?igdb_id=1877",
         "/api/arr/radarr/profiles",
         "/api/arr/radarr/folders",
         "/api/arr/sonarr/profiles",

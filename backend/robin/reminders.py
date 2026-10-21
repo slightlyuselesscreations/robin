@@ -42,18 +42,6 @@ async def shown(settings: db.Settings, kind: str, tmdb_id: int) -> bool:
     return hidden.detail(settings, kind, raw)
 
 
-def monitorable(kind: str, detail: dict[str, Any]) -> bool:
-    """Whether a title has something ahead to monitor: a film a release dated in the region from
-    today, a show a season premiere dated or a first episode from this month on. One out
-    already is found by search to be favourited, never monitored."""
-    if kind == "movie":
-        return bool(detail["releases"])
-    upcoming = detail.get("next_episode")
-    if upcoming:
-        return bool(upcoming.get("episode") == 1)
-    return not db.before_month(detail.get("date"))
-
-
 def _where(release_type: str, platform: str | None) -> str:
     """How a notice names a film's release."""
     if release_type == "theatrical":
@@ -91,45 +79,72 @@ async def _movie(settings: db.Settings, row: dict[str, Any], window: notices.Win
         film, settings.tmdb_region, window.today.isoformat(), [row["release_type"]], catalogue
     ) or [{"date": None, "platform": None}]
     when, platform = found["date"], found["platform"]
-    if when != row["date"] or (platform or {}).get("name") != row["platform"]:
-        db.update_reminder(int(row["id"]), when, platform)
+    title, poster = film.get("title") or row["title"], tmdb.image(film.get("poster_path"), "w342")
+    if (when, (platform or {}).get("name"), title, poster) != (
+        row["date"],
+        row["platform"],
+        row["title"],
+        row["poster"],
+    ):
+        db.update_reminder(int(row["id"]), when, platform, title, poster)
+    word = _where(row["release_type"], (platform or {}).get("name"))
+    told = await _told(settings, row, f"{title} {word}", when, window.today)
     due = window.pending(date.fromisoformat(when), row["notified_for"]) if when else None
     if due is None:
-        return 0
-    word = _where(row["release_type"], (platform or {}).get("name"))
+        return told
     await _send(
         settings,
         row,
-        title=f"{row['title']} is {word} {window.relative(date.fromisoformat(when))}",
+        title=f"{title} is {word} {window.relative(date.fromisoformat(when))}",
         message=f"Releases {when} in {settings.tmdb_region}.",
         tags="clapper",
     )
     db.mark_notified("reminders", int(row["id"]), due.marker, done=due.last)
-    return 1
+    return told + 1
 
 
 async def _show(settings: db.Settings, row: dict[str, Any], window: notices.Window) -> int:
     show = await tmdb.show(settings, int(row["tmdb_id"]))
     episode = premiere(show)
     upcoming = episode["air_date"] if episode else None
-    if upcoming != row["date"]:
-        db.update_reminder(int(row["id"]), upcoming, tmdb.network(show))
+    title, poster = show.get("name") or row["title"], tmdb.image(show.get("poster_path"), "w342")
+    if (upcoming, title, poster) != (row["date"], row["title"], row["poster"]):
+        db.update_reminder(int(row["id"]), upcoming, tmdb.network(show), title, poster)
+    told = await _told(settings, row, title, upcoming, window.today)
     if episode is None:
-        return 0
+        return told
     when = date.fromisoformat(episode["air_date"])
     due = window.pending(when, row["notified_for"])
     if due is None:
-        return 0
+        return told
     season = episode.get("season_number")
     await _send(
         settings,
         row,
-        title=f"{row['title']} season {season} premieres {window.relative(when)}",
+        title=f"{title} season {season} premieres {window.relative(when)}",
         message=f"Season {season} starts {episode['air_date']}.",
         tags="tv",
     )
     db.mark_notified("reminders", int(row["id"]), due.marker, done=False)
-    return 1
+    return told + 1
+
+
+async def _told(
+    settings: db.Settings, row: dict[str, Any], name: str, when: str | None, today: date
+) -> int:
+    """Tell of a reminder's date changing, `notices.tell_change`. Returns how many were sent."""
+
+    async def tell(change: notices.Change) -> None:
+        await _send(settings, row, title=change.title, message=change.message, tags="calendar")
+
+    return await notices.tell_change(
+        name,
+        row["dated_as"],
+        when or "",
+        today,
+        tell,
+        lambda value: db.set_dated_as("reminders", int(row["id"]), value),
+    )
 
 
 async def _send(
@@ -149,11 +164,17 @@ async def _send(
 
 async def monitor_title(settings: db.Settings, kind: tmdb.Kind, tmdb_id: int) -> bool:
     """Monitor a title as its dialog's Monitor would, every variant it allows: each release
-    type a film has dated in the region, a show's season premieres. False when there is nothing
-    to monitor yet, a film with no release in the region from today on."""
+    type a film can be monitored for, dated or still awaited, a show's season premieres. False
+    when there is nothing to monitor, a title out already."""
     detail = await tmdb.title(settings, kind, tmdb_id)
+    if not detail["monitorable"]:
+        return False
+    dated = {r["type"]: r for r in detail["releases"]}
     variants = (
-        [(r["type"], r["date"], r["platform"]) for r in detail["releases"]]
+        [
+            (name, (dated.get(name) or {}).get("date"), (dated.get(name) or {}).get("platform"))
+            for name in detail["open_releases"]
+        ]
         if kind == "movie"
         else [("", premiere_date(detail), detail["platform"])]
     )

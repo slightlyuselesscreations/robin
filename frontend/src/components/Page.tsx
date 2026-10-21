@@ -39,7 +39,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { STATE_LABEL, type ServiceHealth, type State, type View, clockTime } from '@/lib/api'
-import { ANY, type Controls, KEPT, type PageControls } from '@/lib/controls'
+import { type Controls, type PageControls } from '@/lib/controls'
 import type { Status } from '@/lib/items'
 import { logo } from '@/lib/theme'
 import { cn, controlClass } from '@/lib/utils'
@@ -103,22 +103,27 @@ export function ControlGroup({ children }: { children: React.ReactNode }) {
 const InOptions = createContext(false)
 
 /**
- * A page's display mode, kind and filters, in that order, behind one button that is the last
- * thing in its header, so the header keeps to one line on any screen. They drop below it in a
- * menu, each under its name, as the search bar's category picker does. The button carries the
- * accent while any of them differs from the page's default. Each child is one `Control`.
+ * A page's display mode, then its filters, behind one button that is the last thing in its
+ * header, so the header keeps to one line on any screen. They drop below it in a menu, each
+ * under its name, as the search bar's category picker does. The button carries the accent while
+ * a control in it differs from the page's default. Reset and Save as default cover every
+ * control on the page, the type and order in the header too. Each child is one `Control`.
  */
 export function Options({
   controls,
+  header = [],
   children,
 }: {
   controls: PageControls<Controls>
+  /** The controls set in the header beside it, Type and Order, which light their own button. */
+  header?: string[]
   children: React.ReactNode
 }) {
+  const lit = controls.differs(Object.keys(controls.values).filter((k) => !header.includes(k)))
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" aria-label="Options" className={controlClass(controls.changed)}>
+        <button type="button" aria-label="Options" className={controlClass(lit)}>
           <SlidersHorizontal className="size-3.5" />
           <span className="hidden sm:inline">Options</span>
         </button>
@@ -569,47 +574,39 @@ export function StateIcon({ state, className }: { state: State; className?: stri
   return <Icon className={cn('size-3.5 shrink-0', color, className)} strokeWidth={2.25} />
 }
 
+/** The radio value of All in `FilterSelect`, which no option can be. */
+const ALL = '*'
+
 /**
- * A pick out of a long list that Settings narrows, in `Options`: a submenu naming what is
- * picked, holding what Settings leaves, named in full, then any value, then each one. With
- * nothing hidden, Settings already means any, so it is not offered twice.
+ * A filter in `Options`, narrowing what Settings leaves: a submenu naming what is picked, All,
+ * which is all of it, then each value Settings leaves. All is the page's default, empty, so it
+ * is left out of the address.
  */
-export function KeptSelect({
+export function FilterSelect({
   value,
-  kept,
-  any,
+  all,
   options,
   onChange,
 }: {
   value: string
-  /** What Settings leaves, as `filtered` names it, empty when it hides nothing. */
-  kept: string[]
-  /** What any value is called, such as Any genre. */
-  any: string
+  /** What All is called, such as All genres. */
+  all: string
+  /** Only what Settings leaves. */
   options: { value: string; label: string }[]
   onChange: (value: string) => void
 }) {
-  const current = value || (kept.length ? KEPT : ANY)
-  const named =
-    current === KEPT
-      ? kept.join(', ')
-      : current === ANY
-        ? any
-        : (options.find((o) => o.value === current)?.label ?? current)
+  const picked = options.find((o) => o.value === value)
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
-        <span className="min-w-0 truncate">{named}</span>
+        <span className="min-w-0 truncate">{picked?.label ?? all}</span>
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto">
         <DropdownMenuRadioGroup
-          value={current}
-          onValueChange={(next) => onChange(next === ANY && !kept.length ? KEPT : next)}
+          value={picked?.value ?? ALL}
+          onValueChange={(next) => onChange(next === ALL ? '' : next)}
         >
-          {kept.length ? (
-            <DropdownMenuRadioItem value={KEPT}>{kept.join(', ')}</DropdownMenuRadioItem>
-          ) : null}
-          <DropdownMenuRadioItem value={ANY}>{any}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value={ALL}>{all}</DropdownMenuRadioItem>
           {options.map((option) => (
             <DropdownMenuRadioItem key={option.value} value={option.value}>
               {option.label}

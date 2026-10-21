@@ -5,7 +5,7 @@ import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Literal, get_args
+from typing import Any, Literal, get_args
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
@@ -29,6 +29,7 @@ from robin import (
     reminders,
     spa,
     suwayomi,
+    updates,
     upstream,
 )
 from robin.config import env
@@ -78,39 +79,49 @@ async def warm_pages() -> int:
     def pick[T: str](page: str, name: str, offered: tuple[T, ...], fallback: T) -> T:
         return next((o for o in offered if o == control(page, name)), fallback)
 
-    windows = ("30", "90", "180", "365")
+    def sort(page: str, fallback: db.Sort) -> db.Sort:
+        return pick(page, "order", get_args(db.Sort), fallback)
+
+    def genre(page: str) -> str:
+        return control(page, "genre")[:60]
+
     pages: list[Awaitable[object]] = []
     if settings.igdb_ready:
-        offered = get_args(igdb.Platform)
-        platform = next((p for p in offered if p == control("games", "platform")), None)
-        released = control("games", "from") == "january"
+        game_types: tuple[igdb.GameType, ...] = get_args(igdb.GameType)
+        platforms = get_args(igdb.Platform)
         pages.append(
-            games_routes.discover(limit=36, offset=0, platform=platform, released=released)
+            games_routes.discover(
+                limit=36,
+                offset=0,
+                platform=next((p for p in platforms if p == control("games", "platform")), None),
+                type=pick("games", "type", game_types, "upcoming"),
+                genre=genre("games"),
+                sort=sort("games", "date"),
+            )
         )
     if settings.tmdb_ready:
-        kinds: tuple[Literal["movie", "tv", "all"], ...] = ("movie", "tv", "all")
+        types: tuple[Literal["movie", "tv", "all"], ...] = ("movie", "tv", "all")
         releases: tuple[Literal["theatrical", "digital", ""], ...] = ("theatrical", "digital")
-        kind = pick("screens", "kind", kinds, "all")
-        language = control("screens", "lang")
+        language = control("screens", "language")
         pages.append(
             screen_routes.discover(
-                kind=kind,
-                days=int(pick("screens", "days", windows, "90")),
+                kind=pick("screens", "type", types, "all"),
                 page=1,
-                language=language if re.fullmatch(r"[a-z]{2}|any", language) else "",
-                release="" if kind == "tv" else pick("screens", "release", releases, ""),
-                sort=pick("screens", "sort", ("popularity", "date"), "popularity"),
+                language=language if re.fullmatch(r"[a-z]{2}", language) else "",
+                release=pick("screens", "release", releases, ""),
+                genre=genre("screens"),
+                sort=sort("screens", "popularity"),
             )
         )
     if settings.hardcover_ready:
-        book_kinds: tuple[hardcover.Kind, ...] = ("fiction", "nonfiction")
-        genre = control("books", "genre")
+        book_types: tuple[hardcover.Kind, ...] = ("fiction", "nonfiction")
+        book_genre = genre("books")
         pages.append(
             books_routes.discover(
-                days=int(pick("books", "days", windows, "90")),
                 page=1,
-                kind=pick("books", "kind", book_kinds, ""),
-                genre=genre if genre != "kept" and re.fullmatch(r"[a-z0-9-]{1,60}", genre) else "",
+                kind=pick("books", "type", book_types, ""),
+                genre=book_genre if re.fullmatch(r"[a-z0-9-]{1,60}", book_genre) else "",
+                sort=sort("books", "popularity"),
             )
         )
     if settings.suwayomi_ready:
@@ -133,7 +144,7 @@ CHECKS = (
     favourites.monitor_favourites,
     arr.monitor_library,
     notify.notify_upcoming_releases,
-    notify.notify_new_release_dates,
+    notify.notify_date_changes,
     comics.prefetch_week,
     comics.notify_new_firsts,
     favourites.notify_series,
@@ -249,6 +260,12 @@ app.include_router(logs_routes.router)
 def health() -> dict[str, str]:
     """Open to anyone, for the container's health check, so it says nothing else."""
     return {"status": "ok"}
+
+
+@app.get("/api/update", tags=["update"])
+async def update() -> dict[str, Any] | None:
+    """The newest release on GitHub when it is newer than the Robin running, else null."""
+    return await updates.latest()
 
 
 # Mounted last so every API route is matched before the SPA catch all sees the request.

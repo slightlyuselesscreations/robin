@@ -8,6 +8,7 @@ from collections.abc import Callable
 
 import httpx
 import pytest
+from httpx import AsyncClient
 
 from robin import db, prowlarr, upstream
 
@@ -165,3 +166,48 @@ async def test_a_grab_hands_the_release_to_prowlarrs_download_client(prowlarr_st
     assert (seen[0].method, seen[0].url.path) == ("POST", "/api/v1/search")
     assert seen[0].headers["X-Api-Key"] == "secret"
     assert httpx.Response(200, content=seen[0].content).json() == {"guid": "a", "indexerId": 3}
+
+
+async def test_a_search_comes_back_best_seeded_first_without_prowlarrs_key(
+    client: AsyncClient, prowlarr_stub: Stub
+) -> None:
+    configured()
+    db.upsert_games([{"igdb_id": 1877, "name": "Baldur's Gate 3", "platforms": ["PC"]}])
+    leaky = [{**r, "downloadUrl": "http://prowlarr.test/dl?apikey=secret"} for r in RELEASES]
+    seen = prowlarr_stub(lambda _: httpx.Response(200, json=leaky))
+
+    resp = await client.get("/api/prowlarr/search", params={"igdb_id": 1877})
+
+    assert resp.status_code == 200
+    assert resp.json()["term"] == "Baldurs Gate 3", "punctuation would throw away results"
+    assert seen[0].url.params["query"] == "Baldurs Gate 3"
+    releases = resp.json()["releases"]
+    assert [r["guid"] for r in releases] == ["b", "a", "c"]
+    assert releases[1]["flags"] == ["freeleech", "internal"]
+    assert "secret" not in resp.text
+
+
+async def test_a_picked_release_monitors_the_game_and_is_grabbed_once(
+    client: AsyncClient, prowlarr_stub: Stub
+) -> None:
+    configured()
+    db.upsert_games([{"igdb_id": 1877, "name": "Cyberpunk 2077", "platforms": ["PC"]}])
+    seen = prowlarr_stub(lambda r: httpx.Response(200, json=RELEASES if r.method == "GET" else {}))
+
+    pick = {"igdb_id": 1877, "guid": "a"}
+    assert (await client.post("/api/prowlarr/grab", json=pick)).status_code == 204
+    [grabbed] = [r for r in seen if r.method == "POST"]
+    assert grabbed.read() == b'{"guid":"a","indexerId":3}'
+    [row] = (await client.get("/api/monitored")).json()
+    assert (row["status"], row["matched_release"]) == ("matched", "Cyberpunk.2077-CODEX")
+
+    assert (await client.post("/api/prowlarr/grab", json=pick)).status_code == 409
+
+
+async def test_a_console_game_is_not_searched(client: AsyncClient, prowlarr_stub: Stub) -> None:
+    configured()
+    db.upsert_games([{"igdb_id": 7, "name": "Console Only", "platforms": ["PS5"]}])
+    seen = prowlarr_stub(lambda _: httpx.Response(200, json=[]))
+    resp = await client.get("/api/prowlarr/search", params={"igdb_id": 7})
+    assert resp.status_code == 409
+    assert seen == []

@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS requests (
     -- The release notice last sent, as `notices` marks it, and when the last one went out.
     notified_for    TEXT,
     notified_at     TEXT,
+    -- The date it was last read as, a full day, a game's partial date or empty while undated,
+    -- for `notices.date_change`. NULL until it is first read.
+    dated_as        TEXT,
     -- Why the last grab failed, cleared by one that goes through.
     error           TEXT,
     -- Set when the Notified panel on Monitored is cleared. Hides the row there and nowhere else.
@@ -189,6 +192,9 @@ CREATE TABLE IF NOT EXISTS reminders (
     platform     TEXT,
     status       TEXT    NOT NULL CHECK (status IN ('waiting', 'sent')),
     notified_for TEXT,
+    -- The date it was last read as, a full day, a game's partial date or empty while undated,
+    -- for `notices.date_change`. NULL until it is first read.
+    dated_as     TEXT,
     sent_at      TEXT,
     -- Set when the Found panel on Monitored is cleared. Hides the row there and nowhere else.
     cleared_at   TEXT,
@@ -212,6 +218,9 @@ CREATE TABLE IF NOT EXISTS book_reminders (
     next_title   TEXT,
     status       TEXT    NOT NULL CHECK (status IN ('waiting', 'sent')),
     notified_for TEXT,
+    -- The date it was last read as, a full day, a game's partial date or empty while undated,
+    -- for `notices.date_change`. NULL until it is first read.
+    dated_as     TEXT,
     sent_at      TEXT,
     -- Set when the Found panel on Monitored is cleared. Hides the row there and nowhere else.
     cleared_at   TEXT,

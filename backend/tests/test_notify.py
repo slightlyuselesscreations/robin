@@ -5,9 +5,11 @@ it silently.
 """
 
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from pathlib import Path
+from typing import Any, get_args
 
 import pytest
+from apprise import NotifyType
 from httpx import AsyncClient
 
 from robin import db, igdb, notices, notify
@@ -88,11 +90,6 @@ def test_quiet_hours_within_a_day() -> None:
     assert notify.held_until((13, 15), datetime(2026, 9, 10, 14, 30)) == datetime(2026, 9, 10, 15)
     assert notify.held_until((13, 15), datetime(2026, 9, 10, 15)) is None
     assert notify.held_until(None, datetime(2026, 9, 10, 14)) is None
-
-
-def test_undated_picks_out_the_tba_games() -> None:
-    rows = [row(id=1, first_release_date=None), row(id=2)]
-    assert [r["id"] for r in notify.undated(rows)] == [1]
 
 
 def test_nothing_is_sent_until_a_destination_is_set() -> None:
@@ -310,51 +307,45 @@ def test_an_install_without_ntfy_opens_setup_at_notifications() -> None:
     assert db.get_account()["setup_step"] == db.SETUP_NOTIFICATIONS
 
 
-async def test_a_tba_game_that_gains_a_date_is_announced(
+async def test_every_change_of_a_games_date_is_told_once(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    await client.put(
-        "/api/settings",
-        json={**notify_to(), **IGDB},
-    )
+    await client.put("/api/settings", json={**notify_to(), **IGDB})
     db.upsert_games([{"igdb_id": 55, "name": "Someday", "first_release_date": None}])
     db.create_request(55)
 
-    dated = ts(TODAY + timedelta(days=200))
+    igdb_has: dict[str, Any] = {"first_release_date": None, "release_label": None}
 
     async def fake_refresh(igdb_ids: list[int]) -> dict[int, Any]:
-        return {55: {"igdb_id": 55, "name": "Someday", "first_release_date": dated}}
+        return {55: {"igdb_id": 55, "name": "Someday", **igdb_has}}
 
-    notices: list[dict[str, Any]] = []
+    told: list[str] = []
 
     async def fake_send(settings: Any, channel: Any, **kwargs: Any) -> None:
-        notices.append(kwargs)
+        told.append(f"{kwargs['title']} | {kwargs['message']}")
 
     monkeypatch.setattr(igdb, "refresh_games", fake_refresh)
     monkeypatch.setattr(notify, "send", fake_send)
+    later, much_later = TODAY + timedelta(days=200), TODAY + timedelta(days=260)
 
-    assert await notify.notify_new_release_dates() == 1
-    assert "has a release date" in notices[0]["title"]
-    assert "2027-03-29" in notices[0]["message"]
+    async def pass_with(**changes: Any) -> list[str]:
+        igdb_has.update(changes)
+        told.clear()
+        await notify.notify_date_changes(datetime.combine(TODAY, datetime.min.time(), UTC))
+        return told
 
-
-async def test_a_game_still_tba_says_nothing(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    await client.put(
-        "/api/settings",
-        json={**notify_to(), **IGDB},
-    )
-    db.upsert_games([{"igdb_id": 55, "name": "Someday", "first_release_date": None}])
-    db.create_request(55)
-
-    async def still_tba(igdb_ids: list[int]) -> dict[int, Any]:
-        return {55: {"igdb_id": 55, "name": "Someday", "first_release_date": None}}
-
-    monkeypatch.setattr(igdb, "refresh_games", still_tba)
-    monkeypatch.setattr(notify, "send", lambda *a, **k: pytest.fail("should not notify"))
-
-    assert await notify.notify_new_release_dates() == 0
+    assert await pass_with() == [], "nothing is said the first time a game is read"
+    assert await pass_with(release_label="Q2 2027") == ["Someday moved to Q2 2027 | Was TBA."]
+    assert await pass_with(release_label="Q2 2027") == [], "each change is told once"
+    assert await pass_with(first_release_date=ts(later), release_label=None) == [
+        f"Someday has a release date | Releases {later.isoformat()}."
+    ]
+    assert await pass_with(first_release_date=ts(much_later)) == [
+        f"Someday moved to {much_later.isoformat()} | Was {later.isoformat()}."
+    ]
+    assert await pass_with(first_release_date=None) == [
+        f"Someday is no longer dated | Was {much_later.isoformat()}."
+    ]
 
 
 async def test_nothing_is_sent_while_notifications_are_off(
@@ -367,7 +358,7 @@ async def test_nothing_is_sent_while_notifications_are_off(
     monkeypatch.setattr(notify, "send", lambda *a, **k: pytest.fail("should not notify"))
 
     assert await notify.notify_upcoming_releases() == 0
-    assert await notify.notify_new_release_dates() == 0
+    assert await notify.notify_date_changes() == 0
 
 
 async def test_only_monitored_games_are_ever_notified(
@@ -458,5 +449,16 @@ async def test_an_unmonitored_tba_game_is_never_looked_up(
 
     monkeypatch.setattr(igdb, "refresh_games", record)
 
-    await notify.notify_new_release_dates()
+    await notify.notify_date_changes()
     assert asked == [[1]], "only the monitored game should be refetched"
+
+
+@pytest.mark.parametrize("theme", get_args(db.Theme))
+def test_a_notice_is_sent_as_robin_with_the_species_icon(theme: str) -> None:
+    sender = notify.asset(theme)
+    assert (sender.app_id, sender.app_desc) == ("Robin", "Robin")
+    icon = sender.image_url(NotifyType.INFO)
+    assert icon == notify.ICON.format(theme=theme)
+    png = Path(__file__).parents[2] / "frontend" / "public" / f"robin-{theme}.png"
+    assert icon.endswith(f"/frontend/public/{png.name}")
+    assert png.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")

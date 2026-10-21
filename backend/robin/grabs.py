@@ -27,15 +27,11 @@ log = logging.getLogger(__name__)
 # Sonarr's and Radarr's default RSS sync interval.
 RSS_INTERVAL = 15 * 60
 
-# A release published more than this before a dated game is out belongs to another game of the
-# same name, an earlier one or the one remade.
-EARLY = timedelta(days=1)
-
 
 def refusal(release: dict[str, Any], request: dict[str, Any], freeleech: bool) -> str | None:
     """Why a monitored game turns down a release leading with its title, None when it takes
-    it: excluded by `filters`, not freeleech when Settings asks for it, published before the
-    game could be out, rejected by the user or already under review."""
+    it: excluded by `filters`, not freeleech when Settings asks for it, rejected by the user or
+    already under review. A release listed before the game's date is taken like any other."""
     title = str(release.get("title", ""))
     if filters.excluded(title):
         return "excluded release"
@@ -46,14 +42,6 @@ def refusal(release: dict[str, Any], request: dict[str, Any], freeleech: bool) -
     flags = {str(f).lower() for f in release.get("indexerFlags") or []}
     if freeleech and "freeleech" not in flags:
         return "not freeleech"
-    released, published = request["first_release_date"], release.get("publishDate")
-    if released and published:
-        # Prowlarr writes UTC, with or without saying so.
-        when = datetime.fromisoformat(published)
-        when = when if when.tzinfo else when.replace(tzinfo=UTC)
-        day = datetime.fromtimestamp(released, UTC)
-        if when < day - EARLY:
-            return f"published {when:%Y-%m-%d}, before release {day:%Y-%m-%d}"
     return None
 
 
@@ -80,7 +68,7 @@ async def search_waiting(igdb_id: int | None = None) -> int:
     """
     if not db.get_settings().prowlarr_ready:
         return 0
-    tomorrow = (datetime.now(UTC) + EARLY).timestamp()
+    tomorrow = (datetime.now(UTC) + timedelta(days=1)).timestamp()
     grabbed = 0
     for request in db.waiting_requests():
         released = request["first_release_date"]
@@ -195,6 +183,25 @@ async def _send(release: dict[str, Any], request: dict[str, Any], held: bool = F
         if not release:
             raise upstream.UpstreamError("Prowlarr no longer lists the release")
     await prowlarr.grab(release)
+
+
+async def grab_picked(game: dict[str, Any], guid: str) -> bool:
+    """Grab a release the user picked from a search, monitoring the game first when it is not,
+    so it is sent, told and followed as any grab is, once ever. False when the game already
+    has its release.
+
+    The browser only holds the release's guid, so it is found again in a fresh search.
+    """
+    listed = await prowlarr.raw(filters.search_term_for(game["name"]))
+    release = next((r for r in listed if r.get("guid") == guid), None)
+    if release is None:
+        raise upstream.UpstreamError("Prowlarr no longer lists the release")
+    live = db.live_request_for(int(game["igdb_id"]))
+    request_id = int(live["id"]) if live else db.create_request(int(game["igdb_id"]))
+    request = db.get_request(request_id)
+    if request is None or request["status"] == "matched":
+        return False
+    return bool(await _grab(release, request))
 
 
 async def confirm(request_id: int) -> bool:

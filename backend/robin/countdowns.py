@@ -2,9 +2,9 @@
 
 A countdown is any item with a release date, known by the dialog parameter that opens it,
 `game=<igdb id>`, `title=movie-<id>`, `book=<id>`, `comic=<id>`. Each is dated again from its
-category's own cached detail on every read, so a release that moves takes the countdown with
-it, and so does its tag. A new category adds its parameter to `DATES`, and one it has no entry
-for keeps the date and tag it was set with.
+category's own cached detail on every read, and so are its tag, title and image, so Home shows
+the item as its source has it now. A new category adds its parameter to `DATES`, and one it has
+no entry for keeps what it was set with.
 """
 
 import asyncio
@@ -17,30 +17,47 @@ from robin import db, favourites, hardcover, tmdb, upstream
 
 log = logging.getLogger(__name__)
 
-# An item's release date and tag.
-Dated = tuple[str | None, str | None]
+# What a countdown shows of its item, as its source has it now. A value the source does not
+# have is None, and the countdown keeps the one it was set with.
+Read = dict[str, str | None]
 
 
-async def _game(settings: db.Settings, value: str) -> Dated:
+async def _game(settings: db.Settings, value: str) -> Read:
     game = db.get_game(int(value))
-    stamp = (game or {}).get("first_release_date")
-    date = datetime.fromtimestamp(stamp, tz=UTC).date().isoformat() if stamp else None
-    return date, favourites.tag("games", game) if game else None
+    if game is None:
+        return {}
+    stamp, cover = game.get("first_release_date"), game.get("cover_image_id")
+    return {
+        "date": datetime.fromtimestamp(stamp, tz=UTC).date().isoformat() if stamp else None,
+        "tag": favourites.tag("games", game),
+        "title": game.get("name"),
+        "image": f"/img/cover_big/{cover}.jpg" if cover else None,
+    }
 
 
-async def _title(settings: db.Settings, value: str) -> Dated:
+async def _title(settings: db.Settings, value: str) -> Read:
     kind, tmdb_id = value.split("-")
     found = await tmdb.title(settings, "movie" if kind == "movie" else "tv", int(tmdb_id))
-    return found["date"], favourites.tag("screens", found)
+    return {
+        "date": found["date"],
+        "tag": favourites.tag("screens", found),
+        "title": found["title"],
+        "image": found["poster"],
+    }
 
 
-async def _book(settings: db.Settings, value: str) -> Dated:
+async def _book(settings: db.Settings, value: str) -> Read:
     found = await hardcover.book(settings, int(value))
-    return found["date"], favourites.tag("books", found)
+    return {
+        "date": found["date"],
+        "tag": favourites.tag("books", found),
+        "title": found["title"],
+        "image": found["cover"],
+    }
 
 
-# The release date and tag of an item, by the parameter that opens its dialog.
-DATES: dict[str, Callable[[db.Settings, str], Awaitable[Dated]]] = {
+# What a countdown shows of an item, by the parameter that opens its dialog.
+DATES: dict[str, Callable[[db.Settings, str], Awaitable[Read]]] = {
     "game": _game,
     "title": _title,
     "book": _book,
@@ -48,8 +65,8 @@ DATES: dict[str, Callable[[db.Settings, str], Awaitable[Dated]]] = {
 
 
 async def listed() -> list[dict[str, Any]]:
-    """Every countdown, dated again from its category. One that cannot be read just now keeps
-    the date it had."""
+    """Every countdown read again from its category, its date, tag, title and image. One that
+    cannot be read just now keeps what it had."""
     settings = db.get_settings()
 
     async def dated(row: dict[str, Any]) -> dict[str, Any]:
@@ -57,9 +74,9 @@ async def listed() -> list[dict[str, Any]]:
         resolve = DATES.get(key)
         if resolve is not None:
             try:
-                date, tag = await resolve(settings, value)
-                row["date"] = date or row["date"]
-                row["tag"] = tag or row["tag"]
+                read = await resolve(settings, value)
+                for field in ("date", "tag", "title", "image"):
+                    row[field] = read.get(field) or row[field]
             except upstream.UpstreamError as exc:
                 log.info("countdowns: could not date %s: %s", row["target"], exc)
         return row

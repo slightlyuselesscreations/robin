@@ -19,11 +19,13 @@ async def test_a_countdown_follows_its_release_and_goes_when_removed(client: Asy
     }
     assert (await client.post("/api/countdowns", json=body)).status_code == 200
 
-    # The release moves a week, and the countdown with it.
+    # The release moves a week, and the countdown with it, its name and cover too.
     later = AHEAD + timedelta(days=7)
-    db.upsert_games([{"igdb_id": 7, "name": "Game", "first_release_date": int(later.timestamp())}])
+    moved = {"igdb_id": 7, "name": "Game II", "first_release_date": int(later.timestamp())}
+    db.upsert_games([{**moved, "cover_image_id": "co7"}])
     [countdown] = (await client.get("/api/countdowns")).json()
     assert countdown["date"] == later.date().isoformat()
+    assert (countdown["title"], countdown["image"]) == ("Game II", "/img/cover_big/co7.jpg")
 
     assert (await client.delete(f"/api/countdowns/{countdown['id']}")).status_code == 204
     assert (await client.get("/api/countdowns")).json() == []

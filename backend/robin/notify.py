@@ -23,7 +23,7 @@ from urllib.parse import quote, urlencode, urlsplit
 
 import apprise
 
-from robin import db, hidden, igdb, notices, upstream
+from robin import db, hidden, igdb, notices, updates, upstream
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +33,21 @@ CHECK_INTERVAL_SECONDS = 3600
 
 # How long a destination's last failure is kept for Health.
 ERROR_TTL = 7 * 24 * 3600
+
+# What a service shows as the sender: its name, and the species Settings picks as its icon,
+# where a service draws one, as ntfy, Discord and Slack do. Apprise would send its own. The
+# icon is fetched by the phone or the service, never by Robin, so it is served from the public
+# repository: an install that cannot reach GitHub shows none.
+APP = "Robin"
+APP_URL = f"https://github.com/{updates.REPOSITORY}"
+ICON = f"https://raw.githubusercontent.com/{updates.REPOSITORY}/main/frontend/public/robin-{{theme}}.png"
+
+
+def asset(theme: str) -> apprise.AppriseAsset:
+    icon = ICON.format(theme=theme)
+    return apprise.AppriseAsset(
+        app_id=APP, app_desc=APP, app_url=APP_URL, image_url_mask=icon, image_url_logo=icon
+    )
 
 
 class NotifyError(upstream.UpstreamError):
@@ -353,6 +368,7 @@ async def deliver(
     """Send to each destination now. One that fails is logged and kept for Health, and only
     when every one failed is it raised, so a retry never repeats a notice to one it reached."""
     failures = []
+    theme = db.get_settings().theme
     for destination in destinations:
         service = SERVICES[destination["service"]]
         url = address(destination, category)
@@ -365,10 +381,10 @@ async def deliver(
             image = None
         elif click:
             body = f"{message}\n{click}"
-        error = await _deliver(url, title=title, body=body, attach=image)
+        error = await _deliver(url, title=title, body=body, attach=image, theme=theme)
         if error and image:
             # An image that cannot be fetched never holds a notice back.
-            error = await _deliver(url, title=title, body=body, attach=None)
+            error = await _deliver(url, title=title, body=body, attach=None, theme=theme)
         key = f"notify:error:{destination['id']}"
         if error:
             failures.append(f"{service.label}: {error}")
@@ -380,11 +396,13 @@ async def deliver(
         raise NotifyError("; ".join(failures))
 
 
-async def _deliver(url: str, *, title: str, body: str, attach: str | None) -> str | None:
-    """One message to one Apprise address. None once sent, else why not."""
+async def _deliver(
+    url: str, *, title: str, body: str, attach: str | None, theme: str
+) -> str | None:
+    """One message to one Apprise address, sent as Robin. None once sent, else why not."""
 
     def run() -> str | None:
-        notifier = apprise.Apprise()
+        notifier = apprise.Apprise(asset=asset(theme))
         if not notifier.add(url):
             return "not a valid address"
         said: list[str] = []
@@ -501,11 +519,6 @@ def due_for_notice(
     return found
 
 
-def undated(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The ones IGDB still lists as TBA."""
-    return [row for row in rows if row["first_release_date"] is None]
-
-
 def _shown(settings: db.Settings) -> list[dict[str, Any]]:
     """Monitored games, but those Settings hides."""
     return [row for row in db.notifiable_requests() if hidden.game(settings, row)]
@@ -550,48 +563,70 @@ def _kind(status: str | None) -> str:
     return "" if not status or status == igdb.FULL_RELEASE_STATUS else f" {status}."
 
 
-async def notify_new_release_dates() -> int:
-    """Tell the user when a game that was TBA finally gets a date on IGDB.
+def game_dated_as(game: dict[str, Any]) -> str:
+    """A game's date as `notices.date_change` reads it: its exact day, else IGDB's own wording
+    of a partial date such as "Q2 2026", else empty while it is TBA."""
+    stamp = game.get("first_release_date")
+    if stamp:
+        return _release_date(int(stamp)).isoformat()
+    return str(game.get("release_label") or "")
 
-    No marker is needed to avoid repeats: once IGDB has a date the game is no longer TBA, so
-    it drops out of this set by itself.
+
+async def notify_date_changes(now: datetime | None = None) -> int:
+    """Tell the user when a monitored game's date changes on IGDB: a full day where there was
+    none, a day or a partial date that moves, or a date that is dropped. Returns how many were
+    sent.
+
+    Every monitored game still to come is asked of IGDB again, one call, so a move is seen
+    within the hour. A game already out is left alone. What each was last read as is kept in
+    `dated_as`, so each change is told once, and nothing is told the first time a game is read.
     """
     settings = db.get_settings()
+    if not settings.igdb_ready:
+        return 0
     channel = settings.notices("games")
-    if channel is None:
+    today = (now or datetime.now(UTC)).date()
+    coming = [
+        row
+        for row in _shown(settings)
+        if not row["first_release_date"] or _release_date(row["first_release_date"]) >= today
+    ]
+    if not coming:
         return 0
 
-    waiting = undated(_shown(settings))
-    if not waiting:
-        return 0
-
-    fresh = await igdb.refresh_games([int(row["igdb_id"]) for row in waiting])
+    fresh = await igdb.refresh_games([int(row["igdb_id"]) for row in coming])
 
     sent = 0
-    for row in waiting:
-        game = fresh.get(int(row["igdb_id"]))
-        if not game or not game.get("first_release_date"):
-            continue
+    for row in coming:
+        game = fresh.get(int(row["igdb_id"]), row)
 
-        release = _release_date(int(game["first_release_date"]))
-        try:
+        async def tell(change: notices.Change, game: dict[str, Any] = game) -> None:
+            assert channel is not None
             await send(
                 settings,
                 channel,
-                title=f"{row['game_name']} has a release date",
-                message=(
-                    f"IGDB now lists it for {release.isoformat()}."
-                    f"{_kind(game.get('release_status'))}"
-                ),
+                title=change.title,
+                message=f"{change.message}{_kind(game.get('release_status'))}",
                 tags="calendar",
-                click=f"https://www.igdb.com/games/{row['igdb_id']}",
+                click=f"https://www.igdb.com/games/{game['igdb_id']}",
+            )
+            log.info("notify: %s", change.title)
+
+        def store(value: str, request_id: int = int(row["id"])) -> None:
+            db.set_dated_as("requests", request_id, value)
+
+        try:
+            sent += await notices.tell_change(
+                row["game_name"],
+                row["dated_as"],
+                game_dated_as(game),
+                today,
+                tell if channel else None,
+                store,
             )
         except NotifyError as exc:
-            log.warning("notify: could not announce a date for %s: %s", row["game_name"], exc)
-            continue
-
-        log.info("notify: %s is now dated %s", row["game_name"], release)
-        sent += 1
+            # Kept as it was, so the next pass tells it again.
+            log.warning("notify: could not tell of %s: %s", row["game_name"], exc)
 
     return sent
 

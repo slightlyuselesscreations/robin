@@ -1,13 +1,14 @@
-FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
+FROM --platform=$BUILDPLATFORM node:26-alpine AS frontend
 WORKDIR /build
-RUN corepack enable pnpm
+# Node stopped bundling corepack in 25, so it comes from npm.
+RUN npm install -g corepack && corepack enable pnpm
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm build
 
 
-FROM python:3.13-slim
+FROM python:3.14-slim
 RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
     && rm -rf /var/lib/apt/lists/*
 
@@ -20,7 +21,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 COPY backend/pyproject.toml backend/uv.lock ./
-RUN --mount=from=ghcr.io/astral-sh/uv:0.12.18,source=/uv,target=/usr/local/bin/uv \
+RUN --mount=from=ghcr.io/astral-sh/uv:0.13.4,source=/uv,target=/usr/local/bin/uv \
     uv sync --frozen --no-dev --no-install-project
 
 COPY backend/robin ./robin

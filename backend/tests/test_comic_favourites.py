@@ -187,3 +187,41 @@ async def test_any_issue_opens_away_from_a_list(
     assert found["title"] == "Midnight Spider-Man #1"
     assert (found["publisher"], found["volume_id"]) == ("Marvel", 100)
     assert found["detail"]["people"]["Writer"] == [{"id": 41, "name": "Phillip Kennedy Johnson"}]
+
+
+async def test_an_issue_whose_date_moves_is_told_once(
+    client: AsyncClient,
+    comicvine: dict[str, Any],
+    delivered: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await client.put("/api/settings", json=notify_to())
+    first = {"id": "1", "title": "Midnight Spider-Man #1", "url": "https://x.test/1"}
+    await client.post(
+        "/api/comics/monitored", json={**first, "volume_id": 100, "week": WEEK.isoformat()}
+    )
+    ahead = date.today() + timedelta(days=60)
+    coming: dict[str, Any] = {
+        **first,
+        "id": "9",
+        "title": "Midnight Spider-Man #9",
+        "date": ahead.isoformat(),
+        "publisher": "Marvel",
+        "cover": None,
+    }
+
+    async def issues(*args: Any) -> list[dict[str, Any]]:
+        return [coming]
+
+    monkeypatch.setattr(favourites, "coming", issues)
+
+    async def told() -> list[str]:
+        delivered.clear()
+        await favourites.notify_series()
+        return [d["title"] for d in delivered]
+
+    assert await told() == [], "nothing is said the first time it is read"
+    later = ahead + timedelta(days=14)
+    coming["date"] = later.isoformat()
+    assert await told() == [f"Midnight Spider-Man #9 moved to {later.isoformat()}"]
+    assert await told() == [], "each change is told once"

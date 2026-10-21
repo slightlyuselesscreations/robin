@@ -49,11 +49,29 @@ async def shown(settings: db.Settings, book_id: int) -> bool:
 async def _book(settings: db.Settings, row: dict[str, Any], window: notices.Window) -> int:
     found = await hardcover.book(settings, int(row["hardcover_id"]))
     when = found["date"]
-    if when != row["date"]:
-        db.update_book_reminder(int(row["id"]), when, None)
+    if (when, found["title"], found["cover"]) != (row["date"], row["title"], row["cover"]):
+        db.update_book_reminder(int(row["id"]), when, None, found["title"], found["cover"])
+
+    async def tell(change: notices.Change) -> None:
+        await _send(
+            settings,
+            title=change.title,
+            message=change.message,
+            click=found["hardcover"],
+            cover=found["cover"],
+        )
+
+    told = await notices.tell_change(
+        found["title"],
+        row["dated_as"],
+        when or "",
+        window.today,
+        tell,
+        lambda value: db.set_dated_as("book_reminders", int(row["id"]), value),
+    )
     due = window.pending(date.fromisoformat(when), row["notified_for"]) if when else None
     if due is None:
-        return 0
+        return told
     await _send(
         settings,
         title=f"{row['title']} is out {window.relative(date.fromisoformat(when))}",
@@ -62,7 +80,7 @@ async def _book(settings: db.Settings, row: dict[str, Any], window: notices.Wind
         cover=found["cover"],
     )
     db.mark_notified("book_reminders", int(row["id"]), due.marker, done=due.last)
-    return 1
+    return told + 1
 
 
 async def _send(

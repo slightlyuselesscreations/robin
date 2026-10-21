@@ -3,6 +3,7 @@ import { Eye, House, LogOut, type LucideIcon, ScrollText, Settings2, Star } from
 import { NavLink, useLocation } from 'react-router-dom'
 
 import { SearchBar } from '@/components/SearchBar'
+import { UpdateNotice } from '@/components/UpdateNotice'
 import {
   Sidebar,
   SidebarContent,
@@ -33,23 +34,57 @@ type Entry = {
   needs?: (settings: Settings) => boolean
 }
 
-/** Home, then one entry per category, then what spans every category. */
-const GROUPS: Entry[][] = [
-  [{ to: '/', label: 'Home', icon: House, end: true }],
-  CATEGORIES.map((c) => ({
-    to: c.to,
-    label: c.label,
-    icon: c.icon,
-    end: false,
-    needs: c.ready,
-  })),
-  [
-    { to: '/monitored', label: 'Monitored', icon: Eye, end: false },
-    { to: '/favourites', label: 'Favourites', icon: Star, end: false },
-    { to: '/logs', label: 'Logs', icon: ScrollText, end: false },
-    { to: '/settings', label: 'Settings', icon: Settings2, end: false },
-  ],
+/** One run of entries, under a line naming it. The first has no line. */
+type Group = { label: string | null; entries: Entry[] }
+
+/** Home and what spans every category, then each category, then what runs this instance. */
+const GROUPS: Group[] = [
+  {
+    label: null,
+    entries: [
+      { to: '/', label: 'Home', icon: House, end: true },
+      { to: '/monitored', label: 'Monitored', icon: Eye, end: false },
+      { to: '/favourites', label: 'Favourites', icon: Star, end: false },
+    ],
+  },
+  {
+    label: 'Categories',
+    entries: CATEGORIES.map((c) => ({
+      to: c.to,
+      label: c.label,
+      icon: c.icon,
+      end: false,
+      needs: c.ready,
+    })),
+  },
+  {
+    label: 'Management',
+    entries: [
+      { to: '/logs', label: 'Logs', icon: ScrollText, end: false },
+      { to: '/settings', label: 'Settings', icon: Settings2, end: false },
+    ],
+  },
 ]
+
+/**
+ * A line across the sidebar with the group's name in its middle. Collapsed to its icons there is
+ * no room for the name, so it is the plain line.
+ */
+function GroupLine({ label }: { label: string }) {
+  return (
+    <>
+      {/* The separator forces full width under its margin, which made the sidebar scroll. */}
+      <SidebarSeparator className="hidden data-[orientation=horizontal]:w-auto group-data-[collapsible=icon]:block" />
+      <div className="mx-2 flex items-center gap-2 group-data-[collapsible=icon]:hidden">
+        <span className="h-px flex-1 bg-sidebar-border" />
+        <span className="text-2xs font-semibold tracking-wider text-ink-faint uppercase">
+          {label}
+        </span>
+        <span className="h-px flex-1 bg-sidebar-border" />
+      </div>
+    </>
+  )
+}
 
 function isActive(pathname: string, entry: Entry): boolean {
   return entry.end ? pathname === entry.to : pathname.startsWith(entry.to)
@@ -68,15 +103,16 @@ function Links() {
     !entry.needs || (settings.data ? entry.needs(settings.data) : false)
 
   // A group with nothing shown, the categories before any is set up, is left out whole.
-  const groups = GROUPS.map((group) => group.filter(shown)).filter((group) => group.length)
+  const groups = GROUPS.map((group) => ({ ...group, entries: group.entries.filter(shown) })).filter(
+    (group) => group.entries.length,
+  )
   return groups.map((group, g) => (
-    <div key={g}>
-      {/* The separator forces full width under its margin, which made the sidebar scroll. */}
-      {g > 0 ? <SidebarSeparator className="data-[orientation=horizontal]:w-auto" /> : null}
+    <div key={group.label ?? g}>
+      {group.label ? <GroupLine label={group.label} /> : null}
       <SidebarGroup>
         <SidebarGroupContent>
           <SidebarMenu>
-            {group.map((entry) => {
+            {group.entries.map((entry) => {
               return (
                 <SidebarMenuItem key={entry.to}>
                   <SidebarMenuButton
@@ -118,9 +154,10 @@ function SignOut() {
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
-      <p className="px-2 font-mono text-2xs text-ink-faint group-data-[collapsible=icon]:hidden">
-        v{me.data.version}
-      </p>
+      <div className="flex items-center gap-2 px-2 group-data-[collapsible=icon]:hidden">
+        <span className="font-mono text-2xs text-ink-faint">v{me.data.version}</span>
+        <UpdateNotice />
+      </div>
     </SidebarFooter>
   )
 }

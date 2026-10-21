@@ -409,9 +409,9 @@ async def monitor_series(settings: db.Settings, issue: dict[str, Any]) -> dict[s
 
 
 async def notify_series(now: datetime | None = None) -> int:
-    """Send each notice of the comics schedule due for a new issue of a monitored series.
-    Returns how many were sent. An issue is marked as a new #1 is, so neither notice repeats
-    the other."""
+    """Send each notice of the comics schedule due for a new issue of a monitored series, and
+    tell of an issue whose date changes, `notices.date_change`. Returns how many were sent.
+    An issue is marked as a new #1 is, so neither notice repeats the other."""
     settings = db.get_settings()
     channel = settings.notices("comics")
     window = notices.window(settings, "comics", now)
@@ -427,6 +427,33 @@ async def notify_series(now: datetime | None = None) -> int:
             log.warning("comics: could not read %s: %s", row["series"], exc)
             continue
         for issue in issues:
+
+            async def tell(change: notices.Change, issue: dict[str, Any] = issue) -> None:
+                await notify.send(
+                    settings,
+                    channel,
+                    title=change.title,
+                    message=change.message,
+                    tags="calendar",
+                    click=issue["url"],
+                    attach=issue["cover"],
+                )
+
+            def store(value: str, issue: dict[str, Any] = issue) -> None:
+                comics.mark_dated_as(issue, value)
+
+            try:
+                sent += await notices.tell_change(
+                    issue["title"],
+                    comics.dated_as(issue),
+                    issue["date"] or "",
+                    window.today,
+                    tell,
+                    store,
+                )
+            except notify.NotifyError as exc:
+                log.warning("comics: date of %s failed: %s", issue["title"], exc)
+                continue
             when = date.fromisoformat(issue["date"]) if issue["date"] else None
             due = when and window.pending(when, comics.seen(issue), grace=6)
             if not when or not due:

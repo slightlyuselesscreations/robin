@@ -247,6 +247,22 @@ export type NotifyService = {
 /** One notice of a schedule: this many days before the date, at this server local hour. */
 export type Notice = { days: number; hour: number }
 
+/** One indexer result, as Prowlarr lists it, without what carries Prowlarr's key. */
+export type Release = {
+  guid: string
+  indexer_id: number
+  indexer: string
+  title: string
+  size: number
+  seeders: number
+  leechers: number
+  /** Whole days. */
+  age: number
+  info_url: string | null
+  /** Indexer flags, lower cased: freeleech, halfleech, internal, scene. */
+  flags: string[]
+}
+
 export type DiscoverPage = {
   games: Game[]
   next_offset: number | null
@@ -422,12 +438,23 @@ export type BookReminder = {
   created_at: string
 }
 
+/** Each narrows what Settings leaves, empty for all of it. */
 export type BookFilters = {
-  days: number
-  /** Empty for the literary types kept in Settings, or one of them. */
   kind: '' | 'fiction' | 'nonfiction'
-  /** Empty for the genres kept in Settings, `any` for every one, or one slug. */
+  /** One genre slug. */
   genre: string
+  /** Most anticipated first, or soonest first. */
+  sort: 'popularity' | 'date'
+}
+
+/** Each narrows what Settings leaves, empty for all of it. */
+export type GameFilters = {
+  type: 'upcoming' | 'out'
+  platform: string
+  /** One genre, by name. */
+  genre: string
+  /** Soonest first, or most anticipated first. */
+  sort: 'date' | 'popularity'
 }
 
 export type GameExtra = {
@@ -563,6 +590,15 @@ export type Me = {
   passkeys: boolean
   /** The version running, told once signed in. */
   version: string
+}
+
+/** A Robin released on GitHub that is newer than the one running. */
+export type Update = {
+  version: string
+  /** The release notes, plain lines. */
+  notes: string
+  url: string
+  published: string
 }
 
 /** A backup on the data volume, `version` the Robin that wrote it. */
@@ -730,6 +766,10 @@ export type ScreenDetail = ScreenTitle & {
   seasons: number | null
   /** A film's kept release types with a date in the region from today. */
   releases: { type: ReleaseType; tag: string; date: string; platform: Platform | null }[]
+  /** A film's release types it can be monitored for, dated or still awaited in the region. */
+  open_releases: ReleaseType[]
+  /** Whether it has anything ahead to monitor, as the server decides. */
+  monitorable: boolean
   trailer: string | null
   watch: { stream: string[]; rent: string[]; buy: string[]; link: string | null }
   imdb: string | null
@@ -737,12 +777,14 @@ export type ScreenDetail = ScreenTitle & {
   homepage: string | null
 }
 
+/** Each narrows what Settings leaves, empty for all of it. */
 export type ScreenFilters = {
-  days: number
-  /** Empty for the original languages kept in Settings, `any` for every one, or one code. */
+  /** One original language, by code. */
   language: string
-  /** One release type of a film, or empty for those kept in Settings. */
+  /** One release type of a film. */
   release: ReleaseType | ''
+  /** One genre, by name, since movies and shows number theirs apart. */
+  genre: string
   /** Most anticipated first, or soonest first. */
   sort: 'popularity' | 'date'
 }
@@ -883,10 +925,18 @@ export const api = {
     })
     return post('/api/auth/passkeys/login', { credential: credential(used) })
   },
-  discover: (limit: number, offset: number, platform: string, released: boolean) =>
-    request<DiscoverPage>(
-      `/api/games/discover?limit=${limit}&offset=${offset}${platform ? `&platform=${platform}` : ''}${released ? '&released=true' : ''}`,
-    ),
+  discover: (limit: number, offset: number, filters: GameFilters) => {
+    const query = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+      type: filters.type,
+      genre: filters.genre,
+      sort: filters.sort,
+    })
+    if (filters.platform) query.set('platform', filters.platform)
+    return request<DiscoverPage>(`/api/games/discover?${query}`)
+  },
+  gameGenres: () => request<string[]>('/api/games/genres'),
   search: (q: string, limit = 24) =>
     request<Game[]>(`/api/games/search?q=${encodeURIComponent(q)}&limit=${limit}`),
   game: (id: number) => request<Game>(`/api/games/${id}`),
@@ -894,9 +944,9 @@ export const api = {
   screen: (kind: ScreenKind | 'all', filters: ScreenFilters, page: number) => {
     const query = new URLSearchParams({
       page: String(page),
-      days: String(filters.days),
       language: filters.language,
       release: filters.release,
+      genre: filters.genre,
       sort: filters.sort,
     })
     return request<ScreenPage>(`/api/screens/${kind}/discover?${query}`)
@@ -917,9 +967,9 @@ export const api = {
   books: (filters: BookFilters, page: number) => {
     const query = new URLSearchParams({
       page: String(page),
-      days: String(filters.days),
       kind: filters.kind,
       genre: filters.genre,
+      sort: filters.sort,
     })
     return request<BookPage>(`/api/books/discover?${query}`)
   },
@@ -1009,6 +1059,11 @@ export const api = {
     }),
   notifyServices: () => request<NotifyService[]>('/api/settings/notify-services'),
   prowlarrIndexers: () => request<NamedThing[]>('/api/prowlarr/indexers'),
+  update: () => request<Update | null>('/api/update'),
+  searchIndexers: (igdbId: number) =>
+    request<{ term: string; releases: Release[] }>(`/api/prowlarr/search?igdb_id=${igdbId}`),
+  grab: (igdbId: number, guid: string) =>
+    post<void>('/api/prowlarr/grab', { igdb_id: igdbId, guid }),
   backups: () => request<Backup[]>('/api/backups'),
   backUp: () => post<Backup>('/api/backups'),
   deleteBackup: (name: string) =>
@@ -1025,6 +1080,22 @@ export function imageSrc(url: string): string {
 
 export function posterUrl(imageId: string | null, size = 'cover_big'): string | null {
   return imageId ? `/img/${size}/${imageId}.jpg` : null
+}
+
+/** What a release costs against a ratio. Nothing while it counts in full. */
+export function leech(flags: string[]): { label: string; className: string } | null {
+  if (flags.includes('freeleech')) return { label: 'Freeleech', className: 'bg-good/15 text-good' }
+  if (flags.includes('neutralleech')) return { label: 'Neutral', className: 'bg-good/15 text-good' }
+  if (flags.includes('halfleech')) return { label: '50%', className: 'bg-accent/15 text-accent' }
+  return null
+}
+
+/** Prowlarr reports age in whole days, so today is anything under one. */
+export function releaseAge(days: number): string {
+  if (days < 1) return 'today'
+  if (days < 30) return `${days}d`
+  if (days < 365) return `${Math.round(days / 30)}mo`
+  return `${(days / 365).toFixed(1)}y`
 }
 
 export function releaseSize(bytes: number): string {

@@ -10,10 +10,62 @@ every date.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
 from robin import db
+
+# A full day, YYYY-MM-DD, as opposed to TBA, kept empty, or a game's partial date, "Q2 2026".
+_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+@dataclass(frozen=True)
+class Change:
+    """A monitored item's date that changed, as its notice says it."""
+
+    title: str
+    message: str
+
+
+def date_change(name: str, before: str | None, now: str, today: date) -> Change | None:
+    """The notice for an item whose date reads `now` and last read `before`, or None.
+
+    A date is a full day, a game's partial date such as "Q2 2026", or empty while there is
+    none. Nothing is said the first time an item is read, `before` None, nor once the day it
+    had is today or past: that release has come, and whatever is dated next is news of its
+    own. A full day where there was none is a release date, none where there was one is no
+    longer dated, and anything else, a full or partial date for another, is a move.
+    """
+    if before is None or before == now:
+        return None
+    if _DAY.fullmatch(before) and before <= today.isoformat():
+        return None
+    if _DAY.fullmatch(now) and not _DAY.fullmatch(before):
+        return Change(f"{name} has a release date", f"Releases {now}.")
+    if not now:
+        return Change(f"{name} is no longer dated", f"Was {before}.")
+    return Change(f"{name} moved to {now}", f"Was {before or 'TBA'}.")
+
+
+async def tell_change(
+    name: str,
+    before: str | None,
+    now: str,
+    today: date,
+    send: Callable[[Change], Awaitable[None]] | None,
+    store: Callable[[str], None],
+) -> int:
+    """Tell of an item's date changing, `date_change`, then keep what it reads now. Returns
+    how many were sent. Without `send` nothing is told and the date is still kept. A send
+    that raises keeps nothing, so the next pass tells it again."""
+    change = date_change(name, before, now, today)
+    if change and send:
+        await send(change)
+    if now != before:
+        store(now)
+    return 1 if change and send else 0
 
 
 def relative(when: date, today: date) -> str:

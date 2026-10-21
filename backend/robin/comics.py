@@ -17,7 +17,7 @@ from typing import Any
 
 import httpx
 
-from robin import __version__, db, hidden, notices, notify, upstream
+from robin import __version__, db, hidden, notices, notify, updates, upstream
 
 log = logging.getLogger(__name__)
 
@@ -45,9 +45,7 @@ MAX_BODY_BYTES = 3800
 SEEN_SECONDS = 90 * 24 * 3600
 
 # Comic Vine refuses a client that does not name itself.
-USER_AGENT = (
-    f"Robin/{__version__} (self-hosted; +https://github.com/slightlyuselesscreations/robin)"
-)
+USER_AGENT = f"Robin/{__version__} (self-hosted; +https://github.com/{updates.REPOSITORY})"
 
 # Comic Vine's most per page, for the issue list and for volumes asked for by id.
 PAGE = 100
@@ -128,6 +126,17 @@ def seen(comic: dict[str, Any]) -> str | None:
 
 def mark_seen(comic: dict[str, Any], marker: str) -> None:
     db.cache_put(_seen_key(comic), marker, SEEN_SECONDS)
+
+
+def dated_as(comic: dict[str, Any]) -> str | None:
+    """The date an issue of a monitored series was last read as, for `notices.date_change`.
+    None until it is first read."""
+    found = db.cache_get(f"comics:dated:{comic['id']}")
+    return found if isinstance(found, str) else None
+
+
+def mark_dated_as(comic: dict[str, Any], value: str) -> None:
+    db.cache_put(f"comics:dated:{comic['id']}", value, SEEN_SECONDS)
 
 
 def client() -> httpx.AsyncClient:

@@ -120,7 +120,7 @@ async def test_a_movie_is_announced_once_for_its_release_type(
     remind("movie", "theatrical")
     remind("movie", "digital")
     assert await reminders.notify_reminders(NOW) == 1
-    assert sent[0]["title"] == "T is in cinemas tomorrow"
+    assert sent[0]["title"] == "A Film is in cinemas tomorrow"
     assert sent[0]["category"] == "screens"
     # Sent, so done. Digital is months away and still waiting.
     assert await reminders.notify_reminders(NOW) == 0
@@ -135,7 +135,7 @@ async def test_a_digital_release_names_its_platform(
     configure(screen_schedule=[{"days": 0, "hour": 9}])
     remind("movie", "digital")
     assert await reminders.notify_reminders(NOW.replace(month=12, day=25)) == 1
-    assert sent[0]["title"] == "T is on Netflix today"
+    assert sent[0]["title"] == "A Film is on Netflix today"
     [row] = db.rows("reminders")
     assert row["platform"] == "Netflix"
 
@@ -160,7 +160,10 @@ async def test_each_notice_of_the_schedule_goes_out(
     [row] = db.rows("reminders")
     assert row["status"] == "waiting"
     assert await reminders.notify_reminders(NOW.replace(day=8)) == 1
-    assert [s["title"] for s in sent] == ["T is in cinemas tomorrow", "T is in cinemas today"]
+    assert [s["title"] for s in sent] == [
+        "A Film is in cinemas tomorrow",
+        "A Film is in cinemas today",
+    ]
     [row] = db.rows("reminders")
     assert row["status"] == "sent"
 
@@ -176,20 +179,22 @@ async def test_a_show_is_announced_on_each_season_premiere(
     configure()
     remind("tv")
     assert await reminders.notify_reminders(NOW) == 1
-    assert sent[0]["title"] == "T season 3 premieres tomorrow"
+    assert sent[0]["title"] == "A Show season 3 premieres tomorrow"
     assert await reminders.notify_reminders(NOW) == 0
 
-    # A mid season episode is not a premiere, nor what the reminder is dated by.
-    titles["tv"] = show(3, 2, "2026-10-08")
-    assert await reminders.notify_reminders(NOW) == 0
+    # Once it has aired, a mid season episode is not a premiere, nor what the reminder is dated
+    # by, and the premiere that passed is not told as a date dropped.
+    titles["tv"] = show(3, 2, "2026-10-15")
+    assert await reminders.notify_reminders(NOW.replace(day=9)) == 0
     assert db.rows("reminders")[0]["date"] is None
 
-    # The next season is, and the reminder is still on.
-    titles["tv"] = show(4, 1, "2026-10-07")
-    assert await reminders.notify_reminders(NOW) == 1
+    # The next season is, told as a new date and then by the schedule, and the reminder is on.
+    titles["tv"] = show(4, 1, "2026-10-21")
+    assert await reminders.notify_reminders(NOW.replace(day=20)) == 2
+    assert sent[-2]["title"] == "A Show has a release date"
     [row] = db.rows("reminders")
-    assert (row["status"], row["notified_for"]) == ("waiting", "2026-10-07|2026-10-06T09")
-    assert row["date"] == "2026-10-07"
+    assert (row["status"], row["notified_for"]) == ("waiting", "2026-10-21|2026-10-20T09")
+    assert row["date"] == "2026-10-21"
 
 
 def test_a_show_is_dated_by_its_next_premiere_alone() -> None:
@@ -241,3 +246,27 @@ async def test_reminders_are_set_listed_and_removed(
     [row] = (await client.get("/api/screens/reminders")).json()
     assert (await client.delete(f"/api/screens/reminders/{row['id']}")).status_code == 204
     assert (await client.get("/api/screens/reminders")).json() == []
+
+
+async def test_a_films_date_appearing_moving_and_dropped_is_told_once_each(
+    sent: list[dict[str, Any]], titles: dict[str, Any]
+) -> None:
+    configure()
+    remind("movie", "digital")
+
+    def digital(day: str | None) -> dict[str, Any]:
+        dates = [{"type": 4, "release_date": f"{day}T00:00", "note": "Netflix"}] if day else []
+        region = [{"iso_3166_1": "US", "release_dates": dates}]
+        return {**FILM, "release_dates": {"results": region}}
+
+    async def told(day: str | None) -> list[str]:
+        titles["movie"] = digital(day)
+        sent.clear()
+        await reminders.notify_reminders(NOW)
+        return [s["title"] for s in sent]
+
+    assert await told(None) == [], "nothing is said the first time it is read"
+    assert await told("2026-12-25") == ["A Film on Netflix has a release date"]
+    assert await told("2026-12-25") == [], "each change is told once"
+    assert await told("2027-01-08") == ["A Film on Netflix moved to 2027-01-08"]
+    assert await told(None) == ["A Film out digitally is no longer dated"]

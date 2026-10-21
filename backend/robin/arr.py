@@ -149,9 +149,10 @@ async def monitor_library() -> int:
         if not await reminders.shown(settings, kind, tmdb_id):
             continue
         try:
-            if kind == "tv" and not reminders.premiere_date(
-                await tmdb.title(settings, kind, tmdb_id)
-            ):
+            # Only what is dated: the libraries hold far more than anyone asked Robin to wait
+            # for, and an undated title is taken up once it has a date.
+            detail = await tmdb.title(settings, kind, tmdb_id)
+            if not (reminders.premiere_date(detail) if kind == "tv" else detail["releases"]):
                 continue
             made = await reminders.monitor_title(settings, kind, tmdb_id)
         except upstream.UpstreamError as exc:

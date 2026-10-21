@@ -4,15 +4,14 @@ import { useSearchParams } from 'react-router-dom'
 
 import { ComicDialog } from '@/components/ComicDialog'
 import { ComicMenu, SeriesMenu } from '@/components/ItemMenus'
-import { GridLoading, Items } from '@/components/MediaCard'
+import { FlightNotice, GridLoading, Items } from '@/components/MediaCard'
 import {
   Control,
-  KeptSelect,
+  FilterSelect,
   Notice,
   Options,
   Page,
   PageHeader,
-  PanelBody,
   Section,
   Sections,
   Segmented,
@@ -21,7 +20,7 @@ import {
 import { SeriesDialog } from '@/components/SeriesDialog'
 import { type Comic, api, errorText } from '@/lib/api'
 import { useSettings } from '@/lib/categories'
-import { ANY, KEPT, asView, usePageControls } from '@/lib/controls'
+import { HEADER_CONTROLS, ORDERS, asView, narrowed, pickOf, usePageControls } from '@/lib/controls'
 import { comicItem, comicMonitorOf, seriesItem } from '@/lib/items'
 import { useComic } from '@/lib/monitor'
 import { useDialogParam, withParam } from '@/lib/params'
@@ -33,22 +32,38 @@ const SOURCES: { value: Source; label: string }[] = [
   { value: 'suwayomi', label: 'Suwayomi' },
 ]
 
+/** #1s are the first issue of a series, or on Suwayomi a series with one issue alone. */
+const TYPES = [
+  { value: 'all', label: 'All' },
+  { value: 'first', label: '#1s' },
+] as const
+
+/** On Suwayomi, where a series names no publisher, Publisher keeps the source's own order. */
+const ORDER = [ORDERS.publisher, ORDERS.title]
+
+const byTitle = (a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title)
+
 /**
  * Every issue of the current week from Comic Vine, the first of a series tagged #1. With
  * Suwayomi set, the panel switches to the series its source updated last, the open one
  * `?series=<suwayomi id>`.
  *
- * The source, the publisher and the open issue are search parameters, so back and forward
- * step through what was looked at.
+ * The source, the type, the order, the publisher and the open issue are search parameters, so
+ * back and forward step through what was looked at.
  */
 export function Comics() {
   const [params] = useSearchParams()
   const controls = usePageControls('comics', {
     view: 'cover',
     source: 'comicvine',
-    publisher: KEPT,
+    type: 'all',
+    order: 'publisher',
+    publisher: '',
   })
-  const view = asView(controls.values.view, 'cover')
+  const { values } = controls
+  const view = asView(values.view, 'cover')
+  const firsts = pickOf(values.type, TYPES) === 'first'
+  const order = pickOf(values.order, ORDER)
 
   const issues = useQuery({
     queryKey: ['comic-issues'],
@@ -73,19 +88,25 @@ export function Comics() {
   const monitored = useQuery({ queryKey: ['comics-monitored'], queryFn: api.monitoredComics })
   const monitorOf = (comic: Comic) => comicMonitorOf(monitored.data, comic)
 
-  // The publishers this week has, for the page's pick. Any while nothing is picked.
+  // The publishers this week has, what Settings leaves of them, for the page to narrow to one.
   const publishers = [
     ...new Map(
       (issues.data?.issues ?? [])
         .filter((c) => c.publisher_id !== null)
         .map((c) => [String(c.publisher_id), c.publisher]),
     ),
-  ].sort((a, b) => a[1].localeCompare(b[1]))
-  const picked = controls.values.publisher
+  ]
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([value, label]) => ({ value, label }))
+  const picked = narrowed(values.publisher, issues.data ? publishers : undefined)
   const shown = (comic: Comic) =>
-    picked === KEPT || picked === ANY || String(comic.publisher_id) === picked
+    (!picked || String(comic.publisher_id) === picked) && (!firsts || comic.number === '1')
 
-  const every = issues.data?.issues.filter(shown) ?? []
+  const every = (issues.data?.issues.filter(shown) ?? []).sort((a, b) =>
+    order === 'title' ? byTitle(a, b) : a.publisher.localeCompare(b.publisher) || byTitle(a, b),
+  )
+  const series = (latest.data ?? []).filter((s) => !firsts || s.issues === 1)
+  if (order === 'title') series.sort(byTitle)
   const week = issues.data?.week
   const openId = params.get('comic')
   const listed = every.find((c) => c.id === openId)
@@ -99,16 +120,27 @@ export function Comics() {
   return (
     <Page>
       <PageHeader title="Comics" icon={BookOpen}>
-        <Options controls={controls}>
+        <Segmented
+          label="Type"
+          options={[...TYPES]}
+          value={firsts ? 'first' : 'all'}
+          onChange={(type) => controls.set({ type })}
+        />
+        <Segmented
+          label="Order"
+          options={ORDER}
+          value={order}
+          onChange={(next) => controls.set({ order: next })}
+        />
+        <Options controls={controls} header={[...HEADER_CONTROLS, 'source']}>
           <ViewSwitch value={view} onChange={(next) => controls.set({ view: next })} />
-          {publishers.length > 1 ? (
+          {source === 'comicvine' && publishers.length > 1 ? (
             <Control label="Publisher">
-              <KeptSelect
+              <FilterSelect
                 value={picked}
-                kept={[]}
-                any="Any publisher"
-                options={publishers.map(([value, label]) => ({ value, label }))}
-                onChange={(next) => controls.set({ publisher: next })}
+                all="All publishers"
+                options={publishers}
+                onChange={(publisher) => controls.set({ publisher })}
               />
             </Control>
           ) : null}
@@ -120,7 +152,13 @@ export function Comics() {
           title={source === 'suwayomi' ? 'Suwayomi' : 'Comic Vine'}
           icon={source === 'suwayomi' ? Library : Newspaper}
           count={
-            source === 'suwayomi' ? latest.data?.length : issues.data ? every.length : undefined
+            source === 'suwayomi'
+              ? latest.data
+                ? series.length
+                : undefined
+              : issues.data
+                ? every.length
+                : undefined
           }
           action={
             suwayomi ? (
@@ -141,7 +179,7 @@ export function Comics() {
             ) : (
               <Items
                 view={view}
-                items={latest.data.map((s) => ({
+                items={series.map((s) => ({
                   ...seriesItem(s, withParam(params, 'series', s.id)),
                   menu: <SeriesMenu series={s} />,
                 }))}
@@ -152,7 +190,10 @@ export function Comics() {
           ) : issues.isError ? (
             <Notice tone="bad">{errorText(issues.error, 'Comic Vine is unreachable')}</Notice>
           ) : every.length === 0 ? (
-            <PanelBody className="text-xs text-ink-faint">No new issues this week.</PanelBody>
+            <FlightNotice>
+              Comic Vine is slow on updating the week's comics. Please wait for Robin's #1s
+              notification to know when data is available
+            </FlightNotice>
           ) : (
             <Items
               view={view}

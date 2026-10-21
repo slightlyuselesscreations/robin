@@ -83,9 +83,10 @@ def exclusive(platform_ids: list[int]) -> list[str]:
 
 
 def platforms(hidden: list[str], pick: str = "") -> frozenset[int]:
-    """The platform ids listed: the page's pick, else every family Settings does not hide, and
-    every one while it hides them all."""
-    families = [pick] if pick in PLATFORMS else [f for f in PLATFORMS if f not in hidden]
+    """The platform ids listed: every family Settings does not hide, and every one while it
+    hides them all. The page's pick narrows that to one, never to a family Settings hides."""
+    shown = [f for f in PLATFORMS if f not in hidden]
+    families = [pick] if pick in shown else shown
     return frozenset().union(*(PLATFORMS[f] for f in families)) or SHOWN_PLATFORMS
 
 
@@ -645,21 +646,56 @@ async def _discover_pool(shown: frozenset[int], released: bool = False) -> list[
     return [int(i) for i in ordered]
 
 
+GameType = Literal["upcoming", "out"]
+
+
 async def discover(
     limit: int = 36,
     offset: int = 0,
     shown: frozenset[int] = SHOWN_PLATFORMS,
-    released: bool = False,
+    game_type: GameType = "upcoming",
+    genre: str = "",
+    sort: db.Sort = "date",
 ) -> dict[str, Any]:
-    """One page of the Discover list on the `shown` platforms, soonest release first, from the
-    first of January with `released`."""
-    pool = await _discover_pool(shown, released)
+    """One page of the Discover list on the `shown` platforms.
+
+    `game_type` is upcoming, dated from tomorrow on or undated, or out, dated from the first of
+    January to today, read from the pool with the year's released games. `genre` keeps the
+    games of one genre, by name. A list is soonest release first, or with `sort` "popularity"
+    most anticipated first, filtered before it is paged so a page is never cut short by a filter.
+    """
+    pool = await _discover_pool(shown, released=game_type == "out")
     stored = db.get_games(pool)
-    ordered = sorted((stored[i] for i in pool if i in stored), key=_sort_key)
+    games = [stored[i] for i in pool if i in stored]
+    if game_type == "out":
+        tomorrow = _tomorrow()
+        games = [g for g in games if g["first_release_date"] and g["first_release_date"] < tomorrow]
+    if genre:
+        games = [g for g in games if genre in g["genres"]]
+    ordered = (
+        sorted(games, key=lambda g: -float(g["popularity"] or 0))
+        if sort == "popularity"
+        else sorted(games, key=_sort_key)
+    )
 
     window = ordered[offset : offset + limit]
     next_offset = offset + limit if offset + limit < len(ordered) else None
     return {"games": window, "next_offset": next_offset}
+
+
+GENRES_KEY = "igdb:genres:v1"
+GENRES_TTL = 7 * 86_400
+
+
+async def genres() -> list[str]:
+    """Every genre IGDB files games under, by name, as a game carries them."""
+
+    async def fetch() -> list[str]:
+        found = await query("genres", "fields name; sort name asc; limit 100;")
+        return [str(g["name"]) for g in found if g.get("name")]
+
+    names: list[str] = await db.remember(GENRES_KEY, GENRES_TTL, fetch)
+    return names
 
 
 # ---------------------------------------------------------------- companies

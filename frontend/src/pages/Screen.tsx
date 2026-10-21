@@ -6,7 +6,7 @@ import { ScreenMenu } from '@/components/ItemMenus'
 import { Items, Skeletons } from '@/components/MediaCard'
 import {
   Control,
-  KeptSelect,
+  FilterSelect,
   NextPage,
   Notice,
   Options,
@@ -27,15 +27,22 @@ import {
   errorText,
 } from '@/lib/api'
 import { useSettings } from '@/lib/categories'
-import { ANY, KEPT, WINDOWS, asView, usePageControls, windowDays } from '@/lib/controls'
+import { HEADER_CONTROLS, ORDERS, asView, narrowed, pickOf, usePageControls } from '@/lib/controls'
 import { useLibrary } from '@/lib/arr'
 import { screenItem } from '@/lib/items'
 import { useScrollPaging } from '@/lib/paging'
-import { filtered } from '@/lib/utils'
 import { withParam } from '@/lib/params'
 
 /** TMDB pages hold twenty titles. Past this many a scroll is not looking for anything. */
 const MAX_PAGES = 15
+
+const TYPES = [
+  { value: 'all', label: 'All', icon: Clapperboard },
+  { value: 'movie', label: 'Movies', icon: Film },
+  { value: 'tv', label: 'TV', icon: Tv },
+] as const
+
+const ORDER = [ORDERS.popularity, ORDERS.date]
 
 const RELEASES: { value: ReleaseType; label: string }[] = [
   { value: 'theatrical', label: 'Cinema' },
@@ -45,89 +52,102 @@ const RELEASES: { value: ReleaseType; label: string }[] = [
 /**
  * Every control as it starts on a bare `/screens`, before the defaults saved for the page. Each
  * is a search parameter, so back and forward step through what was looked at and a filtered
- * view can be bookmarked.
+ * view can be bookmarked. A filter is empty for all of what Settings leaves.
  */
 const BUILTIN = {
   view: 'cover',
-  kind: 'all',
-  release: ANY,
-  lang: KEPT,
-  days: '90',
-  sort: 'popularity',
-}
-
-/** The controls as TMDB is asked, anything no longer offered taking its built in default. */
-function readFilters(values: typeof BUILTIN): {
-  kind: ScreenKind | 'all'
-  filters: ScreenFilters
-} {
-  const kind = values.kind === 'movie' || values.kind === 'tv' ? values.kind : 'all'
-  return {
-    kind,
-    filters: {
-      days: windowDays(values.days, BUILTIN.days),
-      language: values.lang === KEPT ? '' : values.lang,
-      release: kind === 'tv' ? '' : (RELEASES.find((r) => r.value === values.release)?.value ?? ''),
-      sort: values.sort === 'date' ? 'date' : 'popularity',
-    },
-  }
+  type: 'all',
+  order: 'popularity',
+  genre: '',
+  language: '',
+  release: '',
 }
 
 /**
  * Upcoming movies and TV from TMDB, most anticipated first. Genres, original languages and
- * release types are hidden in Settings, the header narrows what is left and picks the rest.
+ * release types are hidden in Settings, and the filters in Options narrow what is left.
  */
 export function Screen() {
   const [params] = useSearchParams()
   const controls = usePageControls('screens', BUILTIN)
-  const view = asView(controls.values.view, 'cover')
-  const { kind, filters } = readFilters(controls.values)
+  const { values } = controls
+  const view = asView(values.view, 'cover')
+  const type: ScreenKind | 'all' = pickOf(values.type, TYPES)
   const settings = useSettings()
   const hiddenLanguages = settings.data?.tmdb_hidden_languages ?? []
   const hiddenReleases = settings.data?.tmdb_hidden_release_types ?? []
-  // The page narrows what Settings leaves shown.
-  const releases = RELEASES.filter((r) => !hiddenReleases.includes(r.value))
+  const hiddenMovieGenres = settings.data?.tmdb_hidden_movie_genres ?? []
+  const hiddenTvGenres = settings.data?.tmdb_hidden_tv_genres ?? []
   const hidden = [
     hiddenLanguages,
     hiddenReleases,
-    settings.data?.tmdb_hidden_movie_genres,
-    settings.data?.tmdb_hidden_tv_genres,
+    hiddenMovieGenres,
+    hiddenTvGenres,
     settings.data?.tmdb_shown_movie_genres,
     settings.data?.tmdb_shown_tv_genres,
   ]
 
   const set = (changes: Partial<typeof BUILTIN>) => controls.set({ ...changes, title: null })
 
-  const movieGenres = useQuery({
-    queryKey: ['screen-genres', 'movie'],
-    queryFn: () => api.screenGenres('movie'),
-    enabled: kind !== 'tv',
-    staleTime: Infinity,
-  })
-  const tvGenres = useQuery({
-    queryKey: ['screen-genres', 'tv'],
-    queryFn: () => api.screenGenres('tv'),
-    enabled: kind !== 'movie',
-    staleTime: Infinity,
-  })
-  const reminders = useQuery({ queryKey: ['screen-reminders'], queryFn: api.reminders })
-  const remindersOf = (title: ScreenTitle) =>
-    (reminders.data ?? []).filter((r) => r.kind === title.kind && r.tmdb_id === title.id)
   const languages = useQuery({
     queryKey: ['screen-languages'],
     queryFn: api.screenLanguages,
     staleTime: Infinity,
   })
+  const movieGenres = useQuery({
+    queryKey: ['screen-genres', 'movie'],
+    queryFn: () => api.screenGenres('movie'),
+    enabled: type !== 'tv',
+    staleTime: Infinity,
+  })
+  const tvGenres = useQuery({
+    queryKey: ['screen-genres', 'tv'],
+    queryFn: () => api.screenGenres('tv'),
+    enabled: type !== 'movie',
+    staleTime: Infinity,
+  })
+  const reminders = useQuery({ queryKey: ['screen-reminders'], queryFn: api.reminders })
+  const remindersOf = (title: ScreenTitle) =>
+    (reminders.data ?? []).filter((r) => r.kind === title.kind && r.tmdb_id === title.id)
   // Movies and shows number their genres apart, so each title is named from its own kind.
   const genreNames = {
     movie: new Map(movieGenres.data?.map((g) => [g.id, g.name])),
     tv: new Map(tvGenres.data?.map((g) => [g.id, g.name])),
   }
-  const languageName = (code: string) => languages.data?.find((l) => l.code === code)?.name ?? code
+
+  // What Settings leaves of each list, for the filters to narrow. A genre is offered by name,
+  // movies and shows numbering theirs apart, and for All from either.
+  const genreOptions =
+    (type !== 'tv' && !movieGenres.data) || (type !== 'movie' && !tvGenres.data)
+      ? undefined
+      : [
+          ...new Set([
+            ...(type === 'tv' ? [] : (movieGenres.data ?? []))
+              .filter((g) => !hiddenMovieGenres.includes(g.id))
+              .map((g) => g.name),
+            ...(type === 'movie' ? [] : (tvGenres.data ?? []))
+              .filter((g) => !hiddenTvGenres.includes(g.id))
+              .map((g) => g.name),
+          ]),
+        ]
+          .sort()
+          .map((name) => ({ value: name, label: name }))
+  const languageOptions = languages.data
+    ?.filter((l) => !hiddenLanguages.includes(l.code))
+    .map((l) => ({ value: l.code, label: l.name }))
+  const releaseOptions = RELEASES.filter((r) => !hiddenReleases.includes(r.value))
+
+  const filters: ScreenFilters = {
+    genre: narrowed(values.genre, genreOptions),
+    language: narrowed(values.language, languageOptions),
+    release:
+      type === 'tv' ? '' : (releaseOptions.find((r) => r.value === values.release)?.value ?? ''),
+    sort: pickOf(values.order, ORDER),
+  }
 
   const titles = useInfiniteQuery({
-    queryKey: ['screen', kind, filters, hidden],
-    queryFn: ({ pageParam }) => api.screen(kind, filters, pageParam),
+    queryKey: ['screen', type, filters, hidden],
+    queryFn: ({ pageParam }) => api.screen(type, filters, pageParam),
     initialPageParam: 1,
     getNextPageParam: (last, all) =>
       all.length >= MAX_PAGES || last.page >= last.total_pages ? undefined : last.page + 1,
@@ -156,60 +176,46 @@ export function Screen() {
   return (
     <Page>
       <PageHeader title="Screens" icon={Clapperboard}>
-        <Options controls={controls}>
+        <Segmented
+          label="Type"
+          options={[...TYPES]}
+          value={type}
+          onChange={(next) => set({ type: next })}
+        />
+        <Segmented
+          label="Order"
+          options={ORDER}
+          value={pickOf(values.order, ORDER)}
+          onChange={(order) => set({ order })}
+        />
+        <Options controls={controls} header={HEADER_CONTROLS}>
           <ViewSwitch value={view} onChange={(next) => set({ view: next })} />
-          <Control label="Kind">
-            <Segmented
-              label="Kind"
-              options={[
-                { value: 'all', label: 'All', icon: Clapperboard },
-                { value: 'movie', label: 'Movies', icon: Film },
-                { value: 'tv', label: 'TV', icon: Tv },
-              ]}
-              value={kind}
-              onChange={(next) => set({ kind: next })}
+          <Control label="Genre">
+            <FilterSelect
+              value={filters.genre}
+              all="All genres"
+              options={genreOptions ?? []}
+              onChange={(genre) => set({ genre })}
             />
           </Control>
-          {kind !== 'tv' && releases.length > 1 ? (
+          <Control label="Language">
+            <FilterSelect
+              value={filters.language}
+              all="All languages"
+              options={languageOptions ?? []}
+              onChange={(language) => set({ language })}
+            />
+          </Control>
+          {type !== 'tv' && releaseOptions.length > 1 ? (
             <Control label="Release">
-              <Segmented
-                label="Release"
-                options={[{ value: ANY, label: 'Any' }, ...releases]}
-                value={filters.release || ANY}
-                onChange={(release) => set({ release })}
+              <FilterSelect
+                value={filters.release}
+                all="All releases"
+                options={releaseOptions}
+                onChange={(next) => set({ release: next })}
               />
             </Control>
           ) : null}
-          <Control label="Language">
-            <KeptSelect
-              value={filters.language}
-              kept={filtered(languages.data ?? [], hiddenLanguages, (l) => l.code, languageName)}
-              any="Any language"
-              options={(languages.data ?? [])
-                .filter((l) => !hiddenLanguages.includes(l.code))
-                .map((l) => ({ value: l.code, label: l.name }))}
-              onChange={(lang) => set({ lang })}
-            />
-          </Control>
-          <Control label="Window">
-            <Segmented
-              label="Window"
-              options={WINDOWS}
-              value={String(filters.days)}
-              onChange={(days) => set({ days })}
-            />
-          </Control>
-          <Control label="Order">
-            <Segmented
-              label="Order"
-              options={[
-                { value: 'popularity', label: 'Popular' },
-                { value: 'date', label: 'Date' },
-              ]}
-              value={filters.sort}
-              onChange={(sort) => set({ sort })}
-            />
-          </Control>
         </Options>
       </PageHeader>
 
@@ -221,14 +227,14 @@ export function Screen() {
         titles.hasNextPage ? (
           <NextPage loading />
         ) : (
-          <Notice>Nothing coming in this window.</Notice>
+          <Notice>Nothing coming.</Notice>
         )
       ) : (
         <>
           <Sections dimmed={titles.isPlaceholderData}>
             <Section
-              title={kind === 'movie' ? 'Movies' : kind === 'tv' ? 'Shows' : 'TMDB'}
-              icon={kind === 'movie' ? Film : kind === 'tv' ? Tv : Clapperboard}
+              title={type === 'movie' ? 'Movies' : type === 'tv' ? 'Shows' : 'TMDB'}
+              icon={type === 'movie' ? Film : type === 'tv' ? Tv : Clapperboard}
               count={list.length}
               note={filters.sort === 'date' ? 'Soonest first' : 'Most anticipated first'}
             >

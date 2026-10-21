@@ -12,7 +12,6 @@ site shows a key with `Bearer ` in front of it, which is taken off before it is 
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
@@ -104,9 +103,9 @@ def discover_where(
 
     The literary types and categories Settings hides are asked of Hardcover, a book carrying
     neither kept. Hidden genres are left to `hidden.book` on the answer, since a genre always
-    shown can bring a book back. `kind` is one literary type instead, `genre` one genre slug,
-    or `any` for every genre. A book's release date is its first publication anywhere, so from
-    tomorrow on means not out yet.
+    shown can bring a book back. The page narrows what is left: `kind` one literary type,
+    `genre` one genre slug, never one Settings hides. A book's release date is its first
+    publication anywhere, so from tomorrow on means not out yet.
 
     A listed book has readers, a cover and an edition with an ISBN, which leaves out what
     anyone can add: self published ebooks carry only an ASIN.
@@ -126,7 +125,7 @@ def discover_where(
     hides: list[dict[str, Any]] = []
     if kind in LITERARY_TYPES:
         where["literary_type_id"] = {"_eq": LITERARY_TYPES[kind]}
-    elif settings.books_hidden_literary_types:
+    if settings.books_hidden_literary_types:
         hides.append(_not_in("literary_type_id", settings.books_hidden_literary_types))
     if settings.books_hidden_categories:
         hides.append(_not_in("book_category_id", settings.books_hidden_categories))
@@ -143,24 +142,29 @@ def _not_in(field: str, hidden: list[int]) -> dict[str, Any]:
 
 
 async def discover(
-    settings: db.Settings, *, days: int, page: int, kind: str, genre: str
+    settings: db.Settings,
+    *,
+    days: int,
+    page: int,
+    kind: str,
+    genre: str,
+    sort: db.Sort = "popularity",
 ) -> dict[str, Any]:
-    """One page of upcoming books, most anticipated first."""
+    """One page of upcoming books, most anticipated first, or with `sort` "date" soonest first."""
     where = discover_where(settings, days=days, kind=kind, genre=genre)
-    key = f"discover:{page}:" + repr(sorted(where.items()))
+    order = "{release_date: asc}" if sort == "date" else "{users_count: desc}"
+    key = f"discover:{sort}:{page}:" + repr(sorted(where.items()))
     data = await _cached(
         settings,
         key,
         PAGE_TTL,
         f"""query Discover($where: books_bool_exp!, $limit: Int!, $offset: Int!) {{
-            books(where: $where, order_by: [{{users_count: desc}}, {{id: asc}}],
+            books(where: $where, order_by: [{order}, {{id: asc}}],
                   limit: $limit, offset: $offset) {{ {BOOK_FIELDS} }}
         }}""",
         {"where": where, "limit": PAGE_SIZE, "offset": (page - 1) * PAGE_SIZE},
     )
-    # A genre the page picks, or any, stands in for those Settings hides.
-    judged = replace(settings, books_hidden_genres=[]) if genre else settings
-    books = [b for b in (_book(raw) for raw in data) if hidden.book(judged, b)]
+    books = [b for b in (_book(raw) for raw in data) if hidden.book(settings, b)]
     for book in books:
         _check(book)
     # No total, which would be a second request. A page that ends exactly on the

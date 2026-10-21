@@ -129,7 +129,7 @@ def password_matches(password: str) -> bool:
     try:
         with _hashing:
             _hasher.verify(stored, password)
-    except (VerifyMismatchError, InvalidHashError):
+    except VerifyMismatchError, InvalidHashError:
         return False
     if _hasher.check_needs_rehash(stored):
         db.update_account(password_hash=hash_password(password))

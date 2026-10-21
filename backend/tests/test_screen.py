@@ -65,11 +65,21 @@ def test_what_settings_hides_is_asked_of_tmdb() -> None:
     assert movie["with_original_language"] == "en|ja"
     assert params("tv")["without_genres"] == "18"
 
-    # The page can pick one language instead, or every one.
+    # The page narrows to one language or one release type Settings shows, never back to one it
+    # hides.
     assert params("movie", language="ko")["with_original_language"] == "ko"
-    assert params("movie", language="any")["with_original_language"] == ""
-    # And one release type instead of those shown.
-    assert params("movie", release="theatrical")["with_release_type"] == "2|3"
+    for hidden_pick in ({"language": "es"}, {"language": "any"}):
+        assert (
+            params("movie", languages=["en", "es", "ja"], **hidden_pick)["with_original_language"]
+            == "en|ja"
+        )
+    assert params("movie", release="digital")["with_release_type"] == "4"
+    assert params("movie", release="theatrical")["with_release_type"] == "4"
+
+
+def test_the_page_narrows_to_one_genre() -> None:
+    assert params("movie", genre_id=28)["with_genres"] == "28"
+    assert "with_genres" not in params("movie")
 
 
 def test_a_genre_always_shown_brings_back_what_another_hides() -> None:

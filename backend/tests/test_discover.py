@@ -486,8 +486,33 @@ async def test_released_starts_discover_on_the_first_of_january(
 
     out = await igdb.discover(game_type="out")
     assert [g["igdb_id"] for g in out["games"]] == [2]
-    assert len(asked) == 3, "the wishlist, what is coming, and what came out this year"
+    assert len(asked) == 4, "the wishlist, what is dated, what is TBA, what came out this year"
     assert (await igdb.discover())["games"] == [], "what is out is not upcoming"
+
+
+async def test_a_dated_game_is_not_crowded_out_by_tba_ones(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """World of Warcraft: Forever, on Battle.net and followed by seven, under hundreds of TBA."""
+    dated = {"id": 1, "name": "Dated", "platforms": [{"id": 6, "abbreviation": "PC"}]}
+    dated["first_release_date"] = igdb._tomorrow() + DAY
+    dated["release_dates"] = [
+        {"date": dated["first_release_date"], "date_format": 0, "platform": 6}
+    ]
+    asked: list[str] = []
+
+    async def query(endpoint: str, body: str) -> list[dict[str, Any]]:
+        asked.append(body)
+        return [dated] if "first_release_date >" in body else []
+
+    async def popularity_type() -> int:
+        return 1
+
+    monkeypatch.setattr(igdb, "query", query)
+    monkeypatch.setattr(igdb, "discover_popularity_type", popularity_type)
+    assert await igdb._discover_pool(igdb.SHOWN_PLATFORMS) == [1]
+    assert any(f"limit {igdb.IGDB_MAX_LIMIT}" in b and "first_release_date >" in b for b in asked)
+    assert any("first_release_date = null" in body for body in asked)
 
 
 async def test_search_asks_for_the_shown_platforms(monkeypatch: pytest.MonkeyPatch) -> None:

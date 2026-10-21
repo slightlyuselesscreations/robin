@@ -26,7 +26,7 @@ TOKEN_CACHE_KEY = "igdb:token"
 POPULARITY_TYPES_CACHE_KEY = "igdb:popularity_types"
 # The version is part of the key so a release that changes the stored shape rebuilds the
 # pool instead of serving rows that predate the change.
-DISCOVER_CACHE_PREFIX = "igdb:discover:v13:"
+DISCOVER_CACHE_PREFIX = "igdb:discover:v14:"
 
 POPULARITY_TYPES_TTL = 24 * 3600
 # As every category's page and detail.
@@ -109,9 +109,13 @@ RELEASE_RANKS = {FULL_RELEASE_STATUS: 0, EARLY_ACCESS_STATUS: 1}
 # bundles and update entries out of search results, which is where the junk lives.
 REAL_GAME_TYPES = "(0,4,8,9,10,11)"
 
-# How much of the popularity ranking Discover considers. Built in three calls, cached, then
+# How much of the popularity ranking Discover considers. Built in four calls, cached, then
 # paged from the stored games, so the release date order applies across the whole list.
 DISCOVER_POOL = 300
+
+# The most IGDB answers in one query. Dated upcoming games are asked for this many by hype, so a
+# modestly followed game with a date is not crowded out by the TBA ones.
+IGDB_MAX_LIMIT = 500
 
 _client: httpx.AsyncClient | None = None
 
@@ -581,11 +585,12 @@ def _year_start() -> int:
 
 
 async def _discover_pool(shown: frozenset[int], released: bool = False) -> list[int]:
-    """The ids Discover pages through, in popularity order, built in three IGDB calls, four
+    """The ids Discover pages through, in popularity order, built in four IGDB calls, five
     with `released`.
 
     Most Wishlisted Upcoming is Steam's wishlist, so a game not on Steam is never in it. IGDB's
-    own hype, its follows before release, ranks the `shown` platforms beside it. `released`
+    own hype, its follows before release, ranks the `shown` platforms beside it, dated and TBA
+    games asked apart, since hundreds of TBA games outrank a dated one followed by a few. `released`
     adds the games out since the first of January, by the same hype, and starts the list
     there instead of tomorrow. The ranking only decides which games are listed. They are
     served in release order.
@@ -608,7 +613,12 @@ async def _discover_pool(shown: frozenset[int], released: bool = False) -> list[
             ),
             query(
                 "games",
-                f"{games_where} & (first_release_date > {now} | first_release_date = null);"
+                f"{games_where} & first_release_date > {now};"
+                f" sort hypes desc; limit {IGDB_MAX_LIMIT};",
+            ),
+            query(
+                "games",
+                f"{games_where} & first_release_date = null;"
                 f" sort hypes desc; limit {DISCOVER_POOL};",
             ),
         ]

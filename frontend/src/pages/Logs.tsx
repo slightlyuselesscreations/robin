@@ -1,7 +1,15 @@
-import { ArrowDownToLine, ScrollText } from 'lucide-react'
+import { ArrowDownToLine, ScrollText, TriangleAlert } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-import { Control, Notice, Options, Page, PageHeader, Segmented } from '@/components/Page'
+import {
+  Control,
+  ControlGroup,
+  Notice,
+  Options,
+  Page,
+  PageHeader,
+  Segmented,
+} from '@/components/Page'
 import { Card } from '@/components/ui/card'
 import { type LogLine, api, errorText } from '@/lib/api'
 import { usePageControls } from '@/lib/controls'
@@ -76,27 +84,27 @@ export function Logs() {
   return (
     <Page>
       <PageHeader title="Logs" icon={ScrollText}>
-        <button
-          type="button"
-          aria-pressed={follow}
-          onClick={() => setFollow(!follow)}
-          className={controlClass(follow)}
-        >
-          <ArrowDownToLine className="size-3.5" />
-          <span className="hidden sm:inline">Follow</span>
-        </button>
+        <ControlGroup>
+          <button
+            type="button"
+            aria-pressed={follow}
+            onClick={() => setFollow(!follow)}
+            className={controlClass(follow)}
+          >
+            <ArrowDownToLine className="size-3.5" />
+            <span className="hidden sm:inline">Follow</span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={level !== 'all'}
+            onClick={() => controls.set({ level: level === 'all' ? 'errors' : 'all' })}
+            className={controlClass(level !== 'all')}
+          >
+            <TriangleAlert className="size-3.5" />
+            <span className="hidden sm:inline">Errors</span>
+          </button>
+        </ControlGroup>
         <Options controls={controls}>
-          <Control label="Level">
-            <Segmented
-              label="Level"
-              value={level}
-              onChange={(next) => controls.set({ level: next })}
-              options={[
-                { value: 'all', label: 'All' },
-                { value: 'problems', label: 'Warnings' },
-              ]}
-            />
-          </Control>
           <Control label="Source">
             <Segmented
               label="Source"

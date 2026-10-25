@@ -15,10 +15,10 @@ import re
 import sqlite3
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_origin, get_type_hints
 
 from robin import redact
 from robin.config import env
@@ -677,77 +677,32 @@ def get_settings() -> Settings:
     lists = {name: json.loads(row[f"{name}_json"] or "null") for name in LIST_FIELDS}
     destinations = list(lists["notify_destinations"] or [])
     redact.remember(*(text(name) for name in SECRET_FIELDS), *notify.secrets(destinations))
+    hints = get_type_hints(Settings)
+
+    def read(name: str) -> Any:
+        """A column as its field on `Settings` is typed, an empty one as that type's empty."""
+        if name in LIST_FIELDS:
+            return lists[name] or (get_origin(hints[name]) or list)()
+        kind = hints[name]
+        if kind is bool:
+            return bool(row[name])
+        if kind is int:
+            return int(row[name] or 0)
+        if kind is str:
+            return text(name).rstrip("/") if name in URL_FIELDS else text(name)
+        return row[name]
+
+    # What a column cannot say alone: a default for an empty one, and what is read elsewhere.
+    special: dict[str, Any] = {
+        "qbittorrent_category": row["qbittorrent_category"] or DEFAULT_CATEGORY,
+        "tmdb_region": row["tmdb_region"] or "US",
+        "tmdb_language": row["tmdb_language"] or "en-US",
+        "notify_destinations": destinations,
+        "hidden_makers": _makers("hide"),
+        "shown_makers": _makers("show"),
+    }
     return Settings(
-        twitch_client_id=text("twitch_client_id"),
-        twitch_client_secret=text("twitch_client_secret"),
-        prowlarr_url=text("prowlarr_url").rstrip("/"),
-        prowlarr_api_key=text("prowlarr_api_key"),
-        prowlarr_indexer_ids=list(lists["prowlarr_indexer_ids"] or []),
-        p2p_groups=list(lists["p2p_groups"] or []),
-        home_layout=list(lists["home_layout"] or []),
-        page_defaults=dict(lists["page_defaults"] or {}),
-        theme=row["theme"],
-        scheme=row["scheme"],
-        comicvine_token=text("comicvine_token"),
-        suwayomi_url=(row["suwayomi_url"] or "").rstrip("/"),
-        suwayomi_source_id=row["suwayomi_source_id"] or "",
-        qbittorrent_url=text("qbittorrent_url").rstrip("/"),
-        qbittorrent_api_key=text("qbittorrent_api_key"),
-        qbittorrent_category=row["qbittorrent_category"] or DEFAULT_CATEGORY,
-        freeleech_only=bool(row["freeleech_only"]),
-        tmdb_token=text("tmdb_token"),
-        tmdb_region=row["tmdb_region"] or "US",
-        tmdb_language=row["tmdb_language"] or "en-US",
-        tmdb_hidden_languages=list(lists["tmdb_hidden_languages"] or []),
-        tmdb_hidden_movie_genres=list(lists["tmdb_hidden_movie_genres"] or []),
-        tmdb_hidden_tv_genres=list(lists["tmdb_hidden_tv_genres"] or []),
-        tmdb_hidden_release_types=list(lists["tmdb_hidden_release_types"] or []),
-        tmdb_shown_movie_genres=list(lists["tmdb_shown_movie_genres"] or []),
-        tmdb_shown_tv_genres=list(lists["tmdb_shown_tv_genres"] or []),
-        radarr_url=text("radarr_url").rstrip("/"),
-        radarr_api_key=text("radarr_api_key"),
-        radarr_profile_id=int(row["radarr_profile_id"] or 0),
-        radarr_root=row["radarr_root"] or "",
-        radarr_add=bool(row["radarr_add"]),
-        sonarr_url=text("sonarr_url").rstrip("/"),
-        sonarr_api_key=text("sonarr_api_key"),
-        sonarr_profile_id=int(row["sonarr_profile_id"] or 0),
-        sonarr_root=row["sonarr_root"] or "",
-        sonarr_add=bool(row["sonarr_add"]),
-        hardcover_token=text("hardcover_token"),
-        books_hidden_literary_types=list(lists["books_hidden_literary_types"] or []),
-        books_hidden_categories=list(lists["books_hidden_categories"] or []),
-        books_hidden_genres=list(lists["books_hidden_genres"] or []),
-        books_shown_genres=list(lists["books_shown_genres"] or []),
-        games_hidden_platforms=list(lists["games_hidden_platforms"] or []),
-        games_schedule=list(lists["games_schedule"] or []),
-        comics_schedule=list(lists["comics_schedule"] or []),
-        screen_schedule=list(lists["screen_schedule"] or []),
-        books_schedule=list(lists["books_schedule"] or []),
-        comics_digest_publishers=list(lists["comics_digest_publishers"] or []),
-        games_quiet=list(lists["games_quiet"] or []),
-        comics_quiet=list(lists["comics_quiet"] or []),
-        screen_quiet=list(lists["screen_quiet"] or []),
-        books_quiet=list(lists["books_quiet"] or []),
-        notify_destinations=destinations,
-        games_notify=bool(row["games_notify"]),
-        comics_notify=bool(row["comics_notify"]),
-        screen_notify=bool(row["screen_notify"]),
-        books_notify=bool(row["books_notify"]),
-        games_favourites=bool(row["games_favourites"]),
-        screen_favourites=bool(row["screen_favourites"]),
-        books_favourites=bool(row["books_favourites"]),
-        games_favourites_monitor=bool(row["games_favourites_monitor"]),
-        screen_favourites_monitor=bool(row["screen_favourites_monitor"]),
-        books_favourites_monitor=bool(row["books_favourites_monitor"]),
-        comics_favourites=bool(row["comics_favourites"]),
-        comics_favourites_monitor=bool(row["comics_favourites_monitor"]),
-        backup_passphrase=text("backup_passphrase"),
-        backups=bool(row["backups"]),
-        backup_hour=int(row["backup_hour"]),
-        backup_keep=int(row["backup_keep"]),
-        hidden_makers=_makers("hide"),
-        shown_makers=_makers("show"),
+        **{f.name: special[f.name] if f.name in special else read(f.name) for f in fields(Settings)}
     )
 
 

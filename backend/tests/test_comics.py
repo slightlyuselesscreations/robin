@@ -258,7 +258,7 @@ async def test_an_unreachable_comic_vine_is_an_error_not_an_empty_week(
 ) -> None:
     stub_http(monkeypatch, lambda _: httpx.Response(503))
     assert (await client.get("/api/comics/issues")).status_code == 502
-    assert db.cache_get(f"comics:issues:v1:{comics.week_of(date.today())}") is None
+    assert db.cache_get(f"comics:issues:v2:{comics.week_of(date.today())}") is None
 
 
 async def test_an_error_in_the_body_is_an_error(
@@ -343,6 +343,15 @@ def test_the_current_week_is_kept_until_it_ends_one_ahead_a_day_any_before_a_few
     assert comics.week_ttl(date(2026, 10, 7), tuesday_night) == 1800
     assert comics.week_ttl(date(2026, 9, 30), wednesday_noon) == comics.ON_DEMAND_TTL
     assert comics.week_ttl(date(2026, 10, 14), wednesday_noon) == comics.AHEAD_TTL
+
+
+def test_a_listing_is_kept_a_day_at_most_and_an_hour_while_empty() -> None:
+    # Read at the stroke of the week, before Comic Vine had any of it.
+    week = comics.week_of(datetime.now(UTC).date())
+    assert comics.listing_ttl(week, []) == comics.EMPTY_TTL
+    assert comics.listing_ttl(week, {"31": [], "10": []}) == comics.EMPTY_TTL
+    assert comics.listing_ttl(week, [{"id": "1"}]) <= comics.AHEAD_TTL
+    assert comics.listing_ttl(week, {"31": [{"id": "1"}]}) <= comics.AHEAD_TTL
 
 
 def test_rows_expired_past_the_stale_keep_are_dropped() -> None:

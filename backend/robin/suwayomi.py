@@ -14,7 +14,7 @@ import logging
 import re
 from typing import Any
 
-from robin import db, notify, upstream
+from robin import db, filters, notify, upstream
 
 log = logging.getLogger(__name__)
 
@@ -83,11 +83,6 @@ def series_title(issue_title: str) -> str:
     return head.strip() if head and re.fullmatch(r"#\d\S*", last) else title
 
 
-def _key(title: str) -> str:
-    """Punctuation differs between Comic Vine and a source, "..." against "…" for one."""
-    return re.sub(r"[^0-9a-z]+", "", title.casefold())
-
-
 def queries(series: str) -> list[str]:
     """The title, then its longest stretch free of punctuation.
 
@@ -110,7 +105,7 @@ def pick(results: list[dict[str, Any]], series: str, year: int) -> dict[str, Any
         dated = _YEAR.search(result["title"])
         if not dated or int(dated.group(1)) < year:
             continue
-        if _key(result["title"][: dated.start()]) == _key(series):
+        if filters.comparable(result["title"][: dated.start()]) == filters.comparable(series):
             found.append((int(dated.group(1)), result))
     return min(found, key=lambda pair: pair[0])[1] if found else None
 

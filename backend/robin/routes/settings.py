@@ -264,91 +264,28 @@ class SettingsPatch(BaseModel):
 
 
 def _to_out(s: db.Settings) -> SettingsOut:
-    return SettingsOut(
-        twitch_client_id=s.twitch_client_id,
-        has_twitch_client_secret=bool(s.twitch_client_secret),
-        prowlarr_url=s.prowlarr_url,
-        has_prowlarr_api_key=bool(s.prowlarr_api_key),
-        prowlarr_indexer_ids=s.prowlarr_indexer_ids,
-        p2p_groups=s.p2p_groups,
-        home_layout=[HomePanel(**panel) for panel in s.home_layout],
-        page_defaults=s.page_defaults,
-        theme=s.theme,
-        scheme=s.scheme,
-        suwayomi_url=s.suwayomi_url,
-        suwayomi_source_id=s.suwayomi_source_id,
-        qbittorrent_url=s.qbittorrent_url,
-        has_qbittorrent_api_key=bool(s.qbittorrent_api_key),
-        qbittorrent_category=s.qbittorrent_category,
-        freeleech_only=s.freeleech_only,
-        has_tmdb_token=bool(s.tmdb_token),
-        tmdb_region=s.tmdb_region,
-        tmdb_language=s.tmdb_language,
-        tmdb_hidden_languages=s.tmdb_hidden_languages,
-        tmdb_hidden_movie_genres=s.tmdb_hidden_movie_genres,
-        tmdb_hidden_tv_genres=s.tmdb_hidden_tv_genres,
-        tmdb_hidden_release_types=[
+    """Every field `SettingsOut` names read from the settings of the same name, each secret as
+    `has_<name>`, and the few that are shaped on the way out."""
+    shaped: dict[str, Any] = {
+        "tmdb_hidden_release_types": [
             t for t in s.tmdb_hidden_release_types if t in tmdb.RELEASE_TYPES
         ],
-        tmdb_shown_movie_genres=s.tmdb_shown_movie_genres,
-        tmdb_shown_tv_genres=s.tmdb_shown_tv_genres,
-        tmdb_ready=s.tmdb_ready,
-        screen_notices_ready=s.notices("screens") is not None,
-        radarr_url=s.radarr_url,
-        has_radarr_api_key=bool(s.radarr_api_key),
-        radarr_profile_id=s.radarr_profile_id,
-        radarr_root=s.radarr_root,
-        radarr_add=s.radarr_add,
-        sonarr_url=s.sonarr_url,
-        has_sonarr_api_key=bool(s.sonarr_api_key),
-        sonarr_profile_id=s.sonarr_profile_id,
-        sonarr_root=s.sonarr_root,
-        sonarr_add=s.sonarr_add,
-        has_hardcover_token=bool(s.hardcover_token),
-        has_comicvine_token=bool(s.comicvine_token),
-        books_hidden_literary_types=s.books_hidden_literary_types,
-        books_hidden_categories=s.books_hidden_categories,
-        books_hidden_genres=s.books_hidden_genres,
-        books_shown_genres=s.books_shown_genres,
-        hardcover_ready=s.hardcover_ready,
-        books_notices_ready=s.notices("books") is not None,
-        games_hidden_platforms=[p for p in s.games_hidden_platforms if p in igdb.PLATFORMS],
-        games_schedule=_schedule(s, "games"),
-        comics_schedule=_schedule(s, "comics"),
-        screen_schedule=_schedule(s, "screens"),
-        books_schedule=_schedule(s, "books"),
-        comics_digest_publishers=[Publisher(**p) for p in s.comics_digest_publishers],
-        games_quiet=s.games_quiet,
-        comics_quiet=s.comics_quiet,
-        screen_quiet=s.screen_quiet,
-        books_quiet=s.books_quiet,
-        notify_destinations=[DestinationOut(**d) for d in notify.masked(s.notify_destinations)],
-        games_notify=s.games_notify,
-        comics_notify=s.comics_notify,
-        screen_notify=s.screen_notify,
-        books_notify=s.books_notify,
-        games_favourites=s.games_favourites,
-        screen_favourites=s.screen_favourites,
-        books_favourites=s.books_favourites,
-        comics_favourites=s.comics_favourites,
-        games_favourites_monitor=s.games_favourites_monitor,
-        screen_favourites_monitor=s.screen_favourites_monitor,
-        books_favourites_monitor=s.books_favourites_monitor,
-        comics_favourites_monitor=s.comics_favourites_monitor,
-        igdb_ready=s.igdb_ready,
-        comics_ready=s.comics_ready,
-        prowlarr_ready=s.prowlarr_ready,
-        qbittorrent_ready=s.qbittorrent_ready,
-        radarr_ready=s.radarr_ready,
-        sonarr_ready=s.sonarr_ready,
-        suwayomi_ready=s.suwayomi_ready,
-        notify_ready=s.notify_ready,
-        has_backup_passphrase=bool(s.backup_passphrase),
-        backups=s.backups,
-        backup_hour=s.backup_hour,
-        backup_keep=s.backup_keep,
-        backups_ready=s.backups_ready,
-    )
+        "games_hidden_platforms": [p for p in s.games_hidden_platforms if p in igdb.PLATFORMS],
+        "screen_notices_ready": s.notices("screens") is not None,
+        "books_notices_ready": s.notices("books") is not None,
+        "games_schedule": _schedule(s, "games"),
+        "comics_schedule": _schedule(s, "comics"),
+        "screen_schedule": _schedule(s, "screens"),
+        "books_schedule": _schedule(s, "books"),
+        "notify_destinations": notify.masked(s.notify_destinations),
+        **{f"has_{name}": bool(getattr(s, name)) for name in db.SECRET_FIELDS},
+    }
+    same = {
+        name: getattr(s, name)
+        for name in SettingsOut.model_fields
+        if name not in shaped and name not in db.SECRET_FIELDS
+    }
+    return SettingsOut.model_validate({**same, **shaped})
 
 
 def _schedule(s: db.Settings, category: db.Category) -> list[Notice]:

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from robin import upstream
+from robin import filters, upstream
 
 BASE = "https://api.predb.net/"
 TIMEOUT = 15.0
@@ -25,9 +25,8 @@ CLEAN = {0, 2, 4}
 Verdict = Literal["clean", "bad", "unknown"]
 
 
-def key(release: str) -> str:
-    """A release name with case and separators gone, the form both sides are compared in."""
-    return "".join(ch for ch in release.lower() if ch.isalnum())
+# A release name with case and separators gone, the form both sides are compared in.
+key = filters.comparable
 
 
 async def pres(term: str, group: str) -> dict[str, tuple[str, int]]:

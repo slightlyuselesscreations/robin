@@ -10,11 +10,10 @@ release type is not carried that way: a game still on a platform shown stays,
 """
 
 import json
-import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from robin import db
+from robin import db, filters
 
 
 def _made(
@@ -103,16 +102,11 @@ def game(settings: db.Settings, found: dict[str, Any]) -> bool:
     return not only or not set(only) <= set(settings.games_hidden_platforms)
 
 
-def _genre(name: str) -> str:
-    """A genre as both a tag slug and a tag name read: "science-fiction", "Science Fiction"."""
-    return re.sub(r"[^a-z0-9]", "", name.casefold())
-
-
 def book(settings: db.Settings, found: dict[str, Any]) -> bool:
     """Whether a book stays, by its literary type, category, genres, authors and series. A
     search hit names neither type nor category, so only the rest can hide it."""
-    genres = {_genre(g) for g in found.get("genres") or []}
-    hidden = {_genre(g) for g in settings.books_hidden_genres}
+    genres = {filters.comparable(g) for g in found.get("genres") or []}
+    hidden = {filters.comparable(g) for g in settings.books_hidden_genres}
     series = (found.get("series") or {}).get("id")
     made = {
         "author": found.get("author_ids") or [],
@@ -126,7 +120,7 @@ def book(settings: db.Settings, found: dict[str, Any]) -> bool:
     )
     return (
         not hit
-        or not genres.isdisjoint({_genre(g) for g in settings.books_shown_genres})
+        or not genres.isdisjoint({filters.comparable(g) for g in settings.books_shown_genres})
         or _made(settings.shown_makers, "books", made)
     )
 

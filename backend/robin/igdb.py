@@ -14,7 +14,7 @@ from typing import Any, Literal
 import httpx
 
 from robin import db, upstream
-from robin.filters import fold_to_ascii
+from robin.filters import comparable
 
 log = logging.getLogger(__name__)
 
@@ -379,14 +379,9 @@ def _extra_metadata(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _comparable(text: str) -> str:
-    """Lowercase alphanumerics only, so baldurs gate lines up with Baldur's Gate."""
-    return "".join(ch for ch in fold_to_ascii(text).lower() if ch.isalnum())
-
-
 def _relevance(game: dict[str, Any], term: str) -> tuple[int, int, int, float]:
-    name = _comparable(game["name"])
-    needle = _comparable(term)
+    name = comparable(game["name"])
+    needle = comparable(term)
     return (
         int(name == needle),
         int(name.startswith(needle)),
@@ -566,7 +561,7 @@ def _once(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     kept: dict[str, dict[str, Any]] = {}
     for game in games:
-        key = _comparable(game["name"])
+        key = comparable(game["name"])
         if key not in kept or (PC in game["platforms"] and PC not in kept[key]["platforms"]):
             kept[key] = game
     chosen = {id(g) for g in kept.values()}
@@ -771,10 +766,10 @@ async def search_favourites(term: str) -> list[dict[str, Any]]:
     safe = term.replace('"', "").replace("\\", "").strip()
     if not safe:
         return []
-    needle = _comparable(safe)
+    needle = comparable(safe)
 
     def rank(raw: dict[str, Any]) -> tuple[int, int, int]:
-        name = _comparable(raw.get("name") or "")
+        name = comparable(raw.get("name") or "")
         made = sum(len(raw.get(k) or []) for k in ("developed", "published", "games"))
         return int(name == needle), int(name.startswith(needle)), made
 

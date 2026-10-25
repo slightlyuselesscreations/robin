@@ -38,6 +38,10 @@ ON_DEMAND_TTL = 4 * 3600
 # How long a week ahead is kept. Comic Vine fills a week in as it comes closer.
 AHEAD_TTL = 24 * 3600
 
+# How long a week's listing that came back empty is kept. Comic Vine fills a week in about when
+# it starts, so one read at midnight can find nothing yet.
+EMPTY_TTL = 3600
+
 # ntfy turns a body over 4096 bytes into an attachment, and most services cut one shorter.
 MAX_BODY_BYTES = 3800
 
@@ -83,6 +87,14 @@ def week_ttl(week: date, now: datetime) -> int:
         return ON_DEMAND_TTL
     ends = datetime.combine(week + timedelta(days=7), datetime.min.time(), tzinfo=UTC)
     return max(60, int((ends - now).total_seconds()))
+
+
+def listing_ttl(week: date, found: Any) -> int:
+    """How long a week's listing is kept: an hour while it is empty, at most a day for the
+    current week, since Comic Vine adds to a week as it goes, and as `week_ttl` otherwise."""
+    if not (any(found.values()) if isinstance(found, dict) else found):
+        return EMPTY_TTL
+    return min(week_ttl(week, datetime.now(UTC)), AHEAD_TTL)
 
 
 def _text(fragment: str) -> str:
@@ -359,10 +371,10 @@ async def week_listing(week: date) -> dict[str, list[dict[str, Any]]]:
         async with client() as http:
             return await _firsts(http, week)
 
-    key = f"comics:week:v4:{week.isoformat()}"
+    key = f"comics:week:v5:{week.isoformat()}"
     try:
         found: dict[str, list[dict[str, Any]]] = await db.remember(
-            key, week_ttl(week, datetime.now(UTC)), read
+            key, lambda listed: listing_ttl(week, listed), read
         )
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         log.warning("comics: listing %s failed: %s", week, exc)
@@ -378,7 +390,7 @@ async def week_issues(week: date) -> list[dict[str, Any]]:
             return await _issues(http, _days(week))
 
     found: list[dict[str, Any]] = await db.remember(
-        f"comics:issues:v1:{week.isoformat()}", week_ttl(week, datetime.now(UTC)), read
+        f"comics:issues:v2:{week.isoformat()}", lambda listed: listing_ttl(week, listed), read
     )
     return found
 

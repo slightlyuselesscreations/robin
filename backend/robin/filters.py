@@ -32,6 +32,12 @@ def fold_to_ascii(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
+def comparable(text: str) -> str:
+    """Lowercase letters and digits only, accents folded, the form two names are compared in:
+    baldurs gate and Baldur's Gate, science-fiction and Science Fiction, "..." and "…"."""
+    return "".join(ch for ch in fold_to_ascii(text).lower() if ch.isalnum())
+
+
 def match_releases_for(title: str) -> str:
     """Build the match_releases pattern for a game title.
 

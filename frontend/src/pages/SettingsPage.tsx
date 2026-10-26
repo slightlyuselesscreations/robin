@@ -457,7 +457,8 @@ function BackupList({ onPick, picked }: { onPick?: (name: string) => void; picke
             className="min-w-0 flex-1 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             <Clip className={cn('block text-sm text-ink', picked === backup.name && 'text-accent')}>
-              {new Date(backup.created).toLocaleString()}
+              {/* toTimeString is always 24 hour, HH:MM first. */}
+              {day(backup.created)} {new Date(backup.created).toTimeString().slice(0, 5)}
             </Clip>
             <Clip className="block text-2xs text-ink-faint">
               {releaseSize(backup.size)}, Robin {backup.version}

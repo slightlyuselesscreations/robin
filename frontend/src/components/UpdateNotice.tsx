@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { api } from '@/lib/api'
+import { day } from '@/lib/items'
 import { cn, controlClass } from '@/lib/utils'
 
 /** The update command on the Docker host, which only pulls. */
@@ -38,9 +39,7 @@ export function UpdateNotice() {
             <DialogTitle className="text-base font-semibold text-ink">
               Robin {found.version}
             </DialogTitle>
-            <span className="text-2xs text-ink-faint">
-              {new Date(found.published).toLocaleDateString()}
-            </span>
+            <span className="text-2xs text-ink-faint">{day(found.published)}</span>
           </div>
 
           {found.notes ? (

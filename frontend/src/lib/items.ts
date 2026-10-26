@@ -25,6 +25,7 @@ import {
   posterUrl,
   releaseLabel,
 } from '@/lib/api'
+import { isoDay } from '@/lib/utils'
 
 export type Status = {
   state: State
@@ -73,7 +74,8 @@ export type Item = {
   fields?: { label: string; value: string | null; mono?: boolean; tone?: 'good' | 'bad' }[]
 }
 
-export const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : null)
+/** A moment as its local day, YYYY-MM-DD, the one form a date takes when it is not written out. */
+export const day = (iso: string | null) => (iso ? isoDay(new Date(iso)) : null)
 
 /** EA for a game in Early Access. */
 export const gameTag = (status: string | null) => (status === 'Early Access' ? 'EA' : null)

@@ -305,6 +305,9 @@ export type Comic = {
   series_url: string | null
   /** When Metron last edited it, null where no list named it. */
   modified?: string | null
+  /** Its series' name and the year the run began, which Suwayomi names a run by. */
+  series?: string | null
+  year?: number | null
   /** The issue page, present once it was opened. */
   detail: ComicDetail | null
   /** The favourite it comes from: its series, publisher, or a writer or artist. */
@@ -338,6 +341,8 @@ export type ComicDetail = {
   imprint?: string | null
   /** Its series' name. */
   series: string | null
+  /** The year its series' run began. Absent from an issue read before it was kept. */
+  year?: number | null
   story_arcs: string[]
   characters: Ref[]
   teams: string[]
@@ -1059,6 +1064,10 @@ export const api = {
   comicIssues: (week?: string) =>
     request<ComicIssues>(`/api/comics/issues${week ? `?week=${week}` : ''}`),
   latestComics: () => request<Series[]>('/api/comics/latest'),
+  onSuwayomi: (series: string, year: number) =>
+    request<Series | null>(
+      `/api/comics/on-suwayomi?series=${encodeURIComponent(series)}&year=${year}`,
+    ),
   searchComics: (q: string) => request<Series[]>(`/api/comics/search?q=${encodeURIComponent(q)}`),
   series: (id: number) => request<Series>(`/api/comics/series/${id}`),
   addSeries: (id: number) =>

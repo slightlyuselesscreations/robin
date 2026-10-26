@@ -373,6 +373,7 @@ def parse_detail(issue: dict[str, Any] | None) -> dict[str, Any] | None:
         "person_ids": sorted({c["id"] for c in issue.get("credits") or []}),
         "series_id": series.get("id"),
         "series": series.get("name"),
+        "year": series.get("year_began"),
         "publisher": issue.get("publisher"),
         "imprint": (issue.get("imprint") or {}).get("name"),
         "number": issue.get("number"),
@@ -742,6 +743,8 @@ async def issue(comic_id: str) -> dict[str, Any] | None:
         "date": found["date"],
         "cover": found["cover"],
         "series_url": f"{SITE}/series/{found['series_id']}/",
+        "series": found["series"],
+        "year": found.get("year"),
         "modified": None,
         "detail": found,
     }

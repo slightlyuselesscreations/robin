@@ -108,6 +108,14 @@ async def search_series(q: str = Query(min_length=1, max_length=120)) -> list[di
     return await suwayomi.search(db.get_settings(), q)
 
 
+@router.get("/comics/on-suwayomi")
+async def on_suwayomi(
+    series: str = Query(min_length=1, max_length=200), year: int = Query(ge=0, le=9999)
+) -> dict[str, Any] | None:
+    """The series an issue is of on the configured Suwayomi source, null when it has none."""
+    return await suwayomi.on_source(db.get_settings(), series, year)
+
+
 @router.get("/comics/latest")
 async def latest_series() -> list[dict[str, Any]]:
     """Series the configured Suwayomi source updated last."""

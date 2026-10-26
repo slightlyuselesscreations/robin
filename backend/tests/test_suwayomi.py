@@ -370,3 +370,20 @@ async def test_the_library_is_not_asked_without_suwayomi(
 ) -> None:
     assert await suwayomi.sync_library() == 0
     assert suwayomi_stub["kinds"] == []
+
+
+async def test_any_issue_opens_in_suwayomi_while_the_source_carries_its_run(
+    client: AsyncClient, suwayomi_stub: dict[str, Any]
+) -> None:
+    await suwayomi_on(client)
+    asked: dict[str, str | int] = {"series": "Midnight X-Men", "year": 2026}
+    found = (await client.get("/api/comics/on-suwayomi", params=asked)).json()
+    assert (found["id"], found["url"]) == (1954, "https://suwayomi.test/manga/1954")
+    assert suwayomi_stub["added"] == [], "nothing is added to the library"
+
+    searches = len(suwayomi_stub["searches"])
+    await client.get("/api/comics/on-suwayomi", params=asked)
+    assert len(suwayomi_stub["searches"]) == searches, "kept"
+
+    older: dict[str, str | int] = {"series": "Midnight X-Men", "year": 2027}
+    assert (await client.get("/api/comics/on-suwayomi", params=older)).json() is None

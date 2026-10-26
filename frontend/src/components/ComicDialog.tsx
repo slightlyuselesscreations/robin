@@ -26,6 +26,7 @@ import {
   COMIC_STATE,
   STATE_LABEL,
   type Comic,
+  type ComicDetail,
   type MonitoredComic,
   api,
   errorText,
@@ -117,6 +118,20 @@ function Body({
     staleTime: Infinity,
     retry: false,
   })
+
+  // The run on the Suwayomi source, for an issue whose series is not in the library.
+  const run = runOf(comic, detail.data)
+  const onSource = useQuery({
+    queryKey: ['on-suwayomi', run.series, run.year],
+    queryFn: () => api.onSuwayomi(run.series, run.year ?? 0),
+    enabled: Boolean(settings.data?.suwayomi_ready) && !monitor?.suwayomi_id && run.year !== null,
+    staleTime: 60 * 60_000,
+    retry: false,
+  })
+  const suwayomiHref =
+    suwayomi && monitor?.suwayomi_id
+      ? `${suwayomi}/manga/${monitor.suwayomi_id}`
+      : (onSource.data?.url ?? null)
 
   const { start, stop } = useComicMonitor(onClose)
   const [zoomed, setZoomed] = useState<{ src: string; name: string } | null>(null)
@@ -256,9 +271,7 @@ function Body({
               onMonitor={() => out && start.mutate({ comic, week: out })}
               onStop={() => monitor && stop.mutate(monitor)}
             />
-            {suwayomi && monitor?.suwayomi_id ? (
-              <OpenInSuwayomi href={`${suwayomi}/manga/${monitor.suwayomi_id}`} />
-            ) : null}
+            {suwayomiHref ? <OpenInSuwayomi href={suwayomiHref} /> : null}
             <CountdownButton
               target={{
                 category: 'comics',
@@ -274,6 +287,14 @@ function Body({
       </MediaBody>
     </>
   )
+}
+
+/** The series an issue is of and the year its run began, as its listing or its details name them. */
+function runOf(comic: Comic, detail?: ComicDetail): { series: string; year: number | null } {
+  return {
+    series: comic.series ?? detail?.series ?? seriesOf(comic.title),
+    year: comic.year ?? detail?.year ?? null,
+  }
 }
 
 /** "Midnight X-Men #3" is of the series "Midnight X-Men". */

@@ -343,6 +343,27 @@ async def find(settings: db.Settings, series: str, year: int) -> dict[str, Any] 
     return None
 
 
+# How long whether the source carries a run is kept: a find a day, a miss an hour, since the
+# source lists a series before its first issue is up.
+ON_SOURCE_TTL = 24 * 3600
+OFF_SOURCE_TTL = 3600
+
+
+async def on_source(settings: db.Settings, series: str, year: int) -> dict[str, Any] | None:
+    """The series on the source, by name and the year its run began, for any issue to open in
+    Suwayomi, None when the source does not carry it. Nothing is added to the library."""
+
+    async def read() -> dict[str, Any] | None:
+        found = await find(settings, series, year)
+        return _series(settings, found) if found else None
+
+    key = f"suwayomi:on-source:v1:{settings.suwayomi_source_id}:{filters.comparable(series)}:{year}"
+    kept: dict[str, Any] | None = await db.remember(
+        key, lambda found: ON_SOURCE_TTL if found else OFF_SOURCE_TTL, read
+    )
+    return kept
+
+
 async def add_found_series() -> int:
     """Add each waiting series the source now carries. Returns how many were added.
 

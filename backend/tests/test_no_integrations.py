@@ -82,6 +82,7 @@ async def test_every_check_stays_quiet_with_a_destination_and_no_source(
         "/api/comics/issue/1",
         "/api/comics/search?q=raven",
         "/api/comics/latest",
+        "/api/comics/on-suwayomi?series=Lost%20Fantasy&year=2025",
         "/api/comics/issues",
         "/api/comics/comic/1",
         "/api/favourites/search?category=comics&q=raven",

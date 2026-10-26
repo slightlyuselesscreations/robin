@@ -36,6 +36,7 @@ def test_an_issue_is_read_for_everything_the_listing_lacks() -> None:
         "person_ids": [41, 42],
         "series_id": 100,
         "series": "Midnight Spider-Man",
+        "year": 2026,
         "publisher": {"id": 1, "name": "Marvel"},
         "imprint": "Black Label",
         "number": "1",

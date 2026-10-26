@@ -1,5 +1,6 @@
-"""A Metron answering from a few series, issues, creators and publishers, for every comics
-test. It filters as Metron does: by week, number, series, creator, publisher and Comic Vine id."""
+"""A Metron answering from a few series, issues, creators, publishers, characters and
+universes, for every comics test. It filters as Metron does: by week, number, series, creator,
+publisher, character, universe and Comic Vine id."""
 
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -29,6 +30,15 @@ CREATORS: dict[int, dict[str, Any]] = {
     42: {"id": 42, "name": "ScieTronc", "image": None},
 }
 
+CHARACTERS: dict[int, dict[str, Any]] = {
+    2: {"id": 2, "name": "Spider-Man", "image": "https://static.metron.test/c2.jpg"},
+    3: {"id": 3, "name": "Etrigan", "image": None},
+}
+
+UNIVERSES: dict[int, dict[str, Any]] = {
+    122: {"id": 122, "name": "Earth 616", "image": None},
+}
+
 
 def series(series_id: int, name: str, publisher: int, cv_id: int | None = None) -> dict[str, Any]:
     return {
@@ -44,7 +54,8 @@ def series(series_id: int, name: str, publisher: int, cv_id: int | None = None) 
 def issue(
     issue_id: int, series_id: int, number: str = "1", day: date | None = None, **extra: Any
 ) -> dict[str, Any]:
-    """One issue, with what its detail says. `credits` is a list of (creator id, role)."""
+    """One issue, with what its detail says. `credits` is a list of (creator id, role),
+    `characters` and `universes` lists of ids, Spider-Man and Earth 616 when left out."""
     return {"id": issue_id, "series_id": series_id, "number": number, "day": day, **extra}
 
 
@@ -87,9 +98,13 @@ class Metron:
             "desc": "<p>A young Peter Parker is <em>transformed</em> &amp; more.</p>",
             "credits": credits,
             "arcs": [{"id": 1, "name": "Midnight"}],
-            "characters": [{"id": 2, "name": "Spider-Man"}],
+            "characters": [
+                {"id": c, "name": CHARACTERS[c]["name"]} for c in found.get("characters", [2])
+            ],
             "teams": [],
-            "universes": [{"id": 122, "name": "Earth 616"}],
+            "universes": [
+                {"id": u, "name": UNIVERSES[u]["name"]} for u in found.get("universes", [122])
+            ],
             "imprint": {"id": 3, "name": "Black Label"},
             "variants": [
                 {"name": "Cover B", "image": "https://static.metron.test/1b.jpg"},
@@ -112,6 +127,10 @@ class Metron:
         if "creator_id" in params:
             cid = int(params["creator_id"])
             found = [i for i in found if cid in [c for c, _ in i.get("credits", [])]]
+        if "character_id" in params:
+            found = [i for i in found if int(params["character_id"]) in i.get("characters", [2])]
+        if "universe_id" in params:
+            found = [i for i in found if int(params["universe_id"]) in i.get("universes", [122])]
         after = params.get("store_date_range_after")
         before = params.get("store_date_range_before")
         if after:
@@ -143,7 +162,12 @@ class Metron:
         if parts[:2] == ["api", "series"]:
             found_series = self.series.get(int(parts[2]))
             return httpx.Response(200, json=found_series) if found_series else missing()
-        for kind, table in (("creator", CREATORS), ("publisher", PUBLISHERS)):
+        for kind, table in (
+            ("creator", CREATORS),
+            ("publisher", PUBLISHERS),
+            ("character", CHARACTERS),
+            ("universe", UNIVERSES),
+        ):
             if path == f"/api/{kind}/":
                 rows = list(table.values())
                 if "cv_id" in params:
@@ -181,10 +205,11 @@ def week_of_series() -> dict[int, dict[str, Any]]:
 
 def week_of_issues(week: date) -> list[dict[str, Any]]:
     """Three #1s this week, one writer credited, and the second issue of the first a week on."""
+    week = comics.ships(week)
     return [
         issue(1, 100, day=week, credits=[(41, "Writer"), (42, "Artist")], cv_id=9001),
-        issue(2, 200, day=week, credits=[(42, "Artist")], cv_id=9002),
-        issue(3, 300, day=week, cv_id=9003),
+        issue(2, 200, day=week, credits=[(42, "Artist")], characters=[3], universes=[], cv_id=9002),
+        issue(3, 300, day=week, characters=[], universes=[], cv_id=9003),
         issue(4, 100, "2", day=week + timedelta(days=7), credits=[(41, "Writer")], cv_id=9004),
     ]
 

@@ -41,6 +41,7 @@ import {
   asComic,
   bookReminderItem,
   foundBookReminderItem,
+  comicOpens,
   foundComicItem,
   foundGameItem,
   foundReminderItem,
@@ -104,7 +105,7 @@ const PAGE: Record<Category, PageOf> = {
       item: {
         ...(row.status === 'added' ? foundComicItem : monitoredComicItem)(
           row,
-          openAt('comic', row.issue_id),
+          openAt(comicOpens(row).param, comicOpens(row).id),
         ),
         menu: <ComicMenu comic={asComic(row)} />,
       },

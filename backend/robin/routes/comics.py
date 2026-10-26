@@ -25,28 +25,29 @@ _reading: dict[date, asyncio.Task[None]] = {}
 @router.get("/comics/issues")
 async def week_issues(week: date | None = None) -> dict[str, Any]:
     """Every issue of a week, of every publisher. `week` is any day of it, defaulting to today,
-    and the answer is keyed by its Wednesday. The earliest is the week the first of this month
+    and the answer is keyed by its Monday. The earliest is the week the first of this month
     falls in, an earlier one answers as that, and its `previous` is null.
 
     An issue carries its details only when it was opened before, and its publisher as far as
     one is kept. The publishers it lacks are read behind the answer, and `reading` says so, for
     the page to ask again."""
     first = comics.first_week()
-    wednesday = max(first, comics.week_of(week or datetime.now(UTC).date()))
+    monday = max(first, comics.week_of(week or datetime.now(UTC).date()))
     try:
-        found = await comics.week_issues(wednesday)
+        found = await comics.week_issues(monday)
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         raise HTTPException(status_code=502, detail="Metron is unreachable") from exc
+    suwayomi.link(found)
     lacking = comics.lacking_publishers(found)
-    if lacking and wednesday not in _reading:
+    if lacking and monday not in _reading:
         task = asyncio.create_task(comics.read_publishers_behind(lacking))
-        _reading[wednesday] = task
-        task.add_done_callback(lambda _: _reading.pop(wednesday, None))
+        _reading[monday] = task
+        task.add_done_callback(lambda _: _reading.pop(monday, None))
     return {
-        "week": wednesday.isoformat(),
-        "reading": wednesday in _reading,
-        "previous": (wednesday - timedelta(days=7)).isoformat() if wednesday > first else None,
-        "next": (wednesday + timedelta(days=7)).isoformat(),
+        "week": monday.isoformat(),
+        "reading": monday in _reading,
+        "previous": (monday - timedelta(days=7)).isoformat() if monday > first else None,
+        "next": (monday + timedelta(days=7)).isoformat(),
         "issues": await _listed(found),
     }
 
@@ -123,12 +124,20 @@ async def add_series_to_library(manga_id: int) -> dict[str, Any]:
     return await suwayomi.add_to_library(db.get_settings(), manga_id)
 
 
+def reported(settings: db.Settings, row: dict[str, Any]) -> dict[str, Any]:
+    """A monitored series as the API reports it, `tracking` while Suwayomi holds it."""
+    return {**row, "status": "tracking"} if db.comic_tracked(settings, row) else row
+
+
 async def _series_shown(settings: db.Settings, row: dict[str, Any]) -> bool:
     """Whether a monitored series stays on Monitored, by its series. Its next issue, `next`,
-    is read beside it from what the series has coming, kept six hours."""
+    is read beside it from what the series has coming, kept six hours, unless Suwayomi holds
+    it, which announces each issue as it lists it."""
     row["next"] = None
+    if db.comic_tracked(settings, row):
+        row["status"] = "tracking"
     series_id = row.get("series_id")
-    if not series_id:
+    if not series_id or row["status"] == "tracking":
         return True
     made = {"series": [series_id], "publisher": [], "person": []}
     if not hidden.comic(settings, made):
@@ -149,8 +158,13 @@ async def _series_shown(settings: db.Settings, row: dict[str, Any]) -> bool:
     return True
 
 
-# A series already added stays in the Suwayomi library when Robin forgets it.
-tracked_routes(router, "/comics/monitored", "comics", _series_shown)
+async def _out_of_library(settings: db.Settings, row: dict[str, Any]) -> None:
+    """A series Robin stops monitoring leaves the Suwayomi library too."""
+    if row["suwayomi_id"] and settings.suwayomi_ready:
+        await suwayomi.remove_from_library(settings, int(row["suwayomi_id"]))
+
+
+tracked_routes(router, "/comics/monitored", "comics", _series_shown, _out_of_library)
 
 
 @router.post("/comics/monitored")
@@ -166,4 +180,5 @@ async def monitor_comic(body: MonitorComic) -> dict[str, Any]:
         "series_id": body.series_id,
         "date": body.week.isoformat(),
     }
-    return await favourites.monitor_series(db.get_settings(), issue)
+    settings = db.get_settings()
+    return reported(settings, await favourites.monitor_series(settings, issue))

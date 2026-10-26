@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { ArrRemoveDialog } from '@/components/ArrRemoveDialog'
 import { BookDialog } from '@/components/BookDialog'
 import { AnyComicDialog } from '@/components/ComicDialog'
+import { AnySeriesDialog } from '@/components/SeriesDialog'
 import { GameDialog } from '@/components/GameDialog'
 import { FavouriteDialog } from '@/components/FavouriteDialog'
 import { CategoryGate } from '@/components/Gate'
@@ -210,6 +211,7 @@ function Dialogs() {
     <>
       {shown('games') ? <SelectedGame /> : null}
       {shown('comics') && !pathname.startsWith('/comics') ? <AnyComicDialog /> : null}
+      {shown('comics') && !pathname.startsWith('/comics') ? <AnySeriesDialog /> : null}
       {shown('screens') ? <SelectedTitle /> : null}
       {shown('books') ? <SelectedBook /> : null}
       <SelectedFavourite />

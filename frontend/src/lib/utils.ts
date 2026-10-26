@@ -37,6 +37,12 @@ export function ahead(day: string | null): boolean {
 }
 
 /** A local calendar day as YYYY-MM-DD. */
+/** A YYYY-MM-DD as the local calendar day it names. */
+export function localDay(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 export function isoDay(day: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`

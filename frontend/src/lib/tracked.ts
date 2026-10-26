@@ -22,11 +22,12 @@ import {
   type Shape,
   calendarDay,
   comicCover,
+  comicOpens,
   comicTag,
   monitoredGameTags,
   reminderKindTag,
 } from '@/lib/items'
-import { monthStart } from '@/lib/utils'
+import { localDay, monthStart } from '@/lib/utils'
 
 /**
  * One thing Robin watches, in any category, as every overview reads it. Home's panels read
@@ -84,12 +85,6 @@ function query<T>(
   return { queryKey, queryFn, select: (rows) => (rows as T[]).map(track) }
 }
 
-/** A YYYY-MM-DD as the local calendar day it names. */
-function localDay(iso: string): Date {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
-
 /** A release timestamp as the calendar day it names, which IGDB states in UTC. */
 function utcDay(timestamp: number): Date {
   const utc = new Date(timestamp * 1000)
@@ -116,9 +111,14 @@ function game(g: MonitoredGame): Watched {
   }
 }
 
-/** A series is dated by its next issue, while Metron dates one, and opens on it. */
+/**
+ * A series is dated by its next issue, while Metron dates one, and opens on it. One Suwayomi
+ * tracks is announced issue by issue as Suwayomi lists them, so it is undated and opens where
+ * it was monitored from.
+ */
 function comic(c: MonitoredComic): Watched {
   const state = COMIC_STATE[c.status]
+  const opens = comicOpens(c)
   return {
     key: `comic:${c.id}`,
     category: 'comics',
@@ -129,10 +129,10 @@ function comic(c: MonitoredComic): Watched {
     image: comicCover(c.cover),
     shape: 'cover',
     tag: comicTag(c),
-    to: `?comic=${c.next?.id ?? c.issue_id}`,
-    release: c.next?.date ? localDay(c.next.date) : null,
+    to: state === 'tracking' ? `?${opens.param}=${opens.id}` : `?comic=${c.next?.id ?? c.issue_id}`,
+    release: state !== 'tracking' && c.next?.date ? localDay(c.next.date) : null,
     releaseText: null,
-    foundAt: state === 'found' ? c.added_at : null,
+    foundAt: state === 'found' || state === 'tracking' ? c.added_at : null,
     createdAt: c.created_at,
   }
 }

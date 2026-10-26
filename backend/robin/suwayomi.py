@@ -1,10 +1,13 @@
-"""Monitored comic series, added to the Suwayomi library once a source carries them.
+"""Monitored comic series, added to the Suwayomi library once a source carries them, and the
+library followed from then on.
 
 Robin tracks series, not issues. A series is monitored from its #1 on the Comics page and
 looked for on the configured Suwayomi source at once, then on every hourly pass while it is
 still waiting. The moment the source lists it, it is added to the library and announced on the
-comics topic, whether or not an issue is up yet. From there Suwayomi owns it, fetching and
-downloading issues as they come out, and Robin asks nothing more about it.
+comics topic, whether or not an issue is up yet. From there Suwayomi fetches and downloads its
+issues as they come out, and `sync_library` reads the library from the configured source on
+every sync: each series in it is monitored in Robin, each issue Suwayomi lists past the count
+kept is announced, and a series gone from it is forgotten.
 """
 
 from __future__ import annotations
@@ -48,6 +51,20 @@ mutation($id: Int!) {
   updateManga(input: {id: $id, patch: {inLibrary: true}}) { manga { id inLibrary } }
 }"""
 
+REMOVE = """
+mutation($id: Int!) {
+  updateManga(input: {id: $id, patch: {inLibrary: false}}) { manga { id inLibrary } }
+}"""
+
+# The library from one source, with how many issues Suwayomi lists for each, read from its own
+# database. Suwayomi's library updates keep that current, the source is not asked.
+LIBRARY = """
+query($source: LongString!) {
+  mangas(condition: {inLibrary: true, sourceId: $source}) {
+    nodes { id title thumbnailUrl chapters { totalCount } latestUploadedChapter { name } }
+  }
+}"""
+
 SOURCE = """
 query($id: LongString!) { source(id: $id) { displayName } }"""
 
@@ -81,6 +98,12 @@ def series_title(issue_title: str) -> str:
     title = issue_title.strip()
     head, _, last = title.rpartition(" ")
     return head.strip() if head and re.fullmatch(r"#\d\S*", last) else title
+
+
+def run_of(title: str) -> tuple[str, int]:
+    """ "Corpse Knight (2026-)" is the series "Corpse Knight" started in 2026, 0 when undated."""
+    dated = _YEAR.search(title)
+    return (title[: dated.start()].strip(), int(dated.group(1))) if dated else (title.strip(), 0)
 
 
 def queries(series: str) -> list[str]:
@@ -212,10 +235,98 @@ async def download_all(settings: db.Settings, manga_id: int) -> int:
 
 
 async def add_to_library(settings: db.Settings, manga_id: int) -> dict[str, Any]:
-    """Add a series found by searching. Suwayomi owns it from here, Robin keeps no record."""
+    """Add a series found by searching, monitored in Robin as the library is."""
     await gql(settings, ADD, {"id": manga_id})
     await download_all(settings, manga_id)
-    return await series(settings, manga_id)
+    found = await series(settings, manga_id)
+    take_in(found, found["issues"])
+    return found
+
+
+async def remove_from_library(settings: db.Settings, manga_id: int) -> None:
+    await gql(settings, REMOVE, {"id": manga_id})
+
+
+def take_in(found: dict[str, Any], chapters: int) -> None:
+    """Monitor a library series Robin has no row for, a waiting one of the same run when there
+    is one."""
+    if any(r["suwayomi_id"] == int(found["id"]) for r in db.rows("comics")):
+        return
+    for row in db.waiting("comics"):
+        if pick([found], row["series"], int(row["year"])):
+            db.mark_comic_added(int(row["id"]), int(found["id"]), chapters)
+            return
+    name, year = run_of(found["title"])
+    db.take_in_comic(
+        suwayomi_id=int(found["id"]),
+        title=found["title"],
+        series=name,
+        year=year,
+        url=found["url"],
+        cover=found["thumbnailUrl"],
+        chapters=chapters,
+    )
+
+
+def link(comics: list[dict[str, Any]]) -> None:
+    """Name the Metron series of each series taken in from Suwayomi that `comics`, a week's
+    issues, are of, by its name and the year its run began."""
+    unlinked = [r for r in db.rows("comics") if r["suwayomi_id"] and not r["series_id"]]
+    if not unlinked:
+        return
+    runs = {(filters.comparable(r["series"]), int(r["year"])): r for r in unlinked}
+    for comic in comics:
+        row = runs.get((filters.comparable(comic.get("series") or ""), comic.get("year") or 0))
+        if row and comic.get("series_id"):
+            db.link_comic_series(int(row["id"]), int(comic["series_id"]), comic["publisher"])
+
+
+async def sync_library() -> int:
+    """Follow the library from the configured source. Returns how many notices were sent.
+
+    Each series in it Robin has no row for is monitored, and each one Robin tracks that is no
+    longer in it is forgotten. An issue Suwayomi lists past the count kept is announced on the
+    comics topic, once. Runs on every sync.
+    """
+    settings = db.get_settings()
+    if not settings.suwayomi_ready:
+        return 0
+    data = await gql(settings, LIBRARY, {"source": settings.suwayomi_source_id})
+    shelf = {int(m["id"]): _series(settings, m) for m in data["mangas"]["nodes"]}
+    channel = settings.notices("comics")
+    sent = 0
+    for row in db.rows("comics"):
+        held = shelf.pop(int(row["suwayomi_id"]), None) if row["suwayomi_id"] else None
+        if held is None:
+            if row["status"] == "added" and row["suwayomi_id"]:
+                db.delete_row("comics", int(row["id"]))
+                log.info("suwayomi: %s left the library", row["series"])
+            continue
+        count = int(held["chapters"]["totalCount"])
+        if row["chapters"] is not None and count > row["chapters"] and channel is not None:
+            latest = (held.get("latestUploadedChapter") or {}).get("name") or ""
+            new = count - int(row["chapters"])
+            try:
+                await notify.send(
+                    settings,
+                    channel,
+                    title=f"{row['series']} {latest}".strip()
+                    if new == 1
+                    else f"{new} new issues of {row['series']}",
+                    message=held["title"],
+                    tags="books",
+                    click=held["url"],
+                    attach=held["thumbnailUrl"],
+                )
+            except notify.NotifyError as exc:
+                log.warning("suwayomi: notice for %s failed: %s", row["series"], exc)
+                continue
+            sent += 1
+        if count != row["chapters"]:
+            db.set_comic_chapters(int(row["id"]), count)
+    for found in shelf.values():
+        take_in(found, int(found["chapters"]["totalCount"]))
+    return sent
 
 
 async def source_name(settings: db.Settings) -> str:

@@ -150,15 +150,27 @@ export function gameStatus(status: MonitorStatus, entry?: MonitoredGame | null):
 
 export function comicStatus(entry: MonitoredComic): Status {
   const state = COMIC_STATE[entry.status]
-  return state === 'found'
-    ? {
+  return state === 'waiting'
+    ? { state, detail: ['Not on the source yet, looked for hourly'] }
+    : {
         state,
         detail: [
-          `In the Suwayomi library since ${day(entry.added_at)}`,
+          entry.added_at
+            ? `In the Suwayomi library since ${day(entry.added_at)}`
+            : 'In the Suwayomi library',
           entry.issues === 0 && 'Added before its first issue was out',
         ],
       }
-    : { state, detail: ['Not on the source yet, looked for hourly'] }
+}
+
+/**
+ * Where a monitored series opens: the issue it was monitored from, or its series on Suwayomi
+ * for one taken in from the library.
+ */
+export function comicOpens(entry: MonitoredComic): { param: 'comic' | 'series'; id: string } {
+  return entry.issue_id.startsWith('suwayomi-') && entry.suwayomi_id !== null
+    ? { param: 'series', id: String(entry.suwayomi_id) }
+    : { param: 'comic', id: entry.issue_id }
 }
 
 /** A countdown to a game, dated by the UTC day IGDB names for its release. */

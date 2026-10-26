@@ -160,7 +160,7 @@ CHECKS = (
 
 # What runs every RSS sync interval rather than hourly, the same guarantee as CHECKS. What
 # quiet hours kept goes out within one of them ending.
-FREQUENT = (grabs.rss_sync, grabs.track_downloads, notify.send_held)
+FREQUENT = (grabs.rss_sync, grabs.track_downloads, suwayomi.sync_library, notify.send_held)
 
 
 @asynccontextmanager

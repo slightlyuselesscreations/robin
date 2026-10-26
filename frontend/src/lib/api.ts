@@ -24,10 +24,11 @@ export const GAME_STATE: Record<MonitorStatus, State> = {
   matched: 'found',
 }
 
-/** How a comic series' stored status reads as a state. */
-export const COMIC_STATE: Record<'monitored' | 'added', State> = {
+/** How a comic series' status reads as a state. `tracking` is one Suwayomi holds. */
+export const COMIC_STATE: Record<MonitoredComic['status'], State> = {
   monitored: 'waiting',
   added: 'found',
+  tracking: 'tracking',
 }
 
 /** How a Screens or a Books reminder's stored status reads as a state. */
@@ -338,10 +339,9 @@ export type ComicDetail = {
   /** Its series' name. */
   series: string | null
   story_arcs: string[]
-  characters: string[]
+  characters: Ref[]
   teams: string[]
-  /** Absent from an issue read before it was kept. */
-  universes?: string[]
+  universes: Ref[]
   /** Characters who first appear in it. */
   first_appearances: string[]
   variants: { name: string; image: string }[]
@@ -350,7 +350,10 @@ export type ComicDetail = {
 /** A series monitored from its #1, waiting for the Suwayomi source or already in the library. */
 export type MonitoredComic = {
   id: number
-  /** The issue it was monitored from, a Metron id, or a LOCG one for older rows. */
+  /**
+   * The issue it was monitored from, a Metron id, a LOCG one for older rows, or
+   * `suwayomi-<id>` for one taken in from the Suwayomi library.
+   */
   issue_id: string
   /** Its series on Metron, null for one monitored from LOCG. */
   series_id: number | null
@@ -362,10 +365,13 @@ export type MonitoredComic = {
   publisher: string
   url: string
   cover: string | null
-  status: 'monitored' | 'added'
+  /** `tracking` while Suwayomi holds it, which announces each issue it lists. */
+  status: 'monitored' | 'added' | 'tracking'
   suwayomi_id: number | null
   /** Issues on the source when the series was added. Zero means none was out yet. */
   issues: number | null
+  /** Issues Suwayomi listed at the last library pass. */
+  chapters: number | null
   added_at: string | null
   /** Cleared from the Notified panel on Monitored. Everywhere else it still reads as found. */
   cleared_at: string | null
@@ -815,6 +821,8 @@ export type FavouriteKind =
   | 'author'
   | 'series'
   | 'publisher'
+  | 'character'
+  | 'universe'
 
 /** Something a dialog names that releases come from, with the id it opens as a favourite by. */
 export type Ref = { id: number; name: string }

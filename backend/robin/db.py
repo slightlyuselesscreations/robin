@@ -95,9 +95,9 @@ def init_db() -> None:
         c.executescript(schema)
         # Before the columns change: what Comic Vine named, moved aside for the carry-over.
         _comicvine_aside(c)
-        # Comics gained favourites, and with them the publisher.
+        # Comics gained favourites, with the publisher, then characters and universes.
         for table in ("favourites", "maker_filters"):
-            _rebuild(c, schema, table, "'publisher'")
+            _rebuild(c, schema, table, "'universe'")
         # Every table the schema declares, so a column added to a new one reaches every install.
         for table in re.findall(r"CREATE TABLE IF NOT EXISTS (\w+) \(", schema):
             _add_missing_columns(c, schema, table)
@@ -1552,10 +1552,12 @@ def clear_found(table: Table) -> int:
 
     Only Monitored hides them: the row stays, so the item still reads as found everywhere else
     and cannot be monitored a second time. A game comes back once it needs the user again: it
-    waits on a moved date, is grabbed, holds a release for review, or a grab fails. A game still
-    tracked is not cleared.
+    waits on a moved date, is grabbed, holds a release for review, or a grab fails. A game or a
+    comic series still tracked is not cleared.
     """
     tracked = f" AND NOT {_tracking()}" if table == "requests" else ""
+    if table == "comics" and get_settings().suwayomi_ready:
+        tracked = " AND suwayomi_id IS NULL"
     with conn() as c:
         return c.execute(
             f"UPDATE {table} AS r SET cleared_at = ?"
@@ -1613,10 +1615,66 @@ def mark_comic_added(comic_id: int, suwayomi_id: int, issues: int) -> None:
     """`issues` is how many the source had when the series was added, never updated after."""
     with conn() as c:
         c.execute(
-            "UPDATE comics SET status = 'added', suwayomi_id = ?, issues = ?, added_at = ?"
-            " WHERE id = ?",
-            (suwayomi_id, issues, now(), comic_id),
+            "UPDATE comics SET status = 'added', suwayomi_id = ?, issues = ?, chapters = ?,"
+            " added_at = ? WHERE id = ?",
+            (suwayomi_id, issues, issues, now(), comic_id),
         )
+
+
+def take_in_comic(
+    *,
+    suwayomi_id: int,
+    title: str,
+    series: str,
+    year: int,
+    url: str,
+    cover: str | None,
+    chapters: int,
+) -> None:
+    """A series in the Suwayomi library Robin did not add, tracked from now on. It is known by
+    its Suwayomi id until a Metron week lists it, `link_comic_series`."""
+    stamp = now()
+    with conn() as c:
+        c.execute(
+            "INSERT INTO comics (issue_id, title, series, year, url, cover, status, suwayomi_id,"
+            " issues, chapters, created_at) VALUES (?, ?, ?, ?, ?, ?, 'added', ?, ?, ?, ?)"
+            " ON CONFLICT (issue_id) DO NOTHING",
+            (
+                f"suwayomi-{suwayomi_id}",
+                title,
+                series,
+                year,
+                url,
+                cover,
+                suwayomi_id,
+                chapters,
+                chapters,
+                stamp,
+            ),
+        )
+
+
+def set_comic_chapters(comic_id: int, chapters: int) -> None:
+    with conn() as c:
+        c.execute("UPDATE comics SET chapters = ? WHERE id = ?", (chapters, comic_id))
+
+
+def link_comic_series(comic_id: int, series_id: int, publisher: str) -> None:
+    """The Metron series a series taken in from Suwayomi is, once a week lists it. A series
+    already monitored by that id keeps its own row."""
+    with conn() as c:
+        c.execute(
+            "UPDATE comics SET series_id = ?, publisher = COALESCE(NULLIF(?, ''), publisher)"
+            " WHERE id = ? AND series_id IS NULL"
+            " AND NOT EXISTS (SELECT 1 FROM comics WHERE series_id = ?)",
+            (series_id, publisher, comic_id, series_id),
+        )
+
+
+def comic_tracked(settings: Settings, row: dict[str, Any]) -> bool:
+    """Whether Suwayomi holds a monitored series, which then follows it issue by issue. The
+    API reports it as `tracking`. Stored, it stays `added`."""
+    return row["status"] == "added" and bool(row["suwayomi_id"]) and settings.suwayomi_ready
 
 
 # ---------------------------------------------------------------- reminders

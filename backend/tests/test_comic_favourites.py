@@ -1,7 +1,7 @@
-"""Comics favourites on Metron: series, creators and publishers, their stars, hiding them, and
-monitoring a series for every new issue."""
+"""Comics favourites on Metron: series, creators, publishers, characters and universes, their
+stars, hiding them, and monitoring a series for every new issue."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import pytest
@@ -34,7 +34,18 @@ async def test_search_finds_series_creators_and_publishers(
     ]
     assert found[0]["meta"] == "Marvel · 2026 · 2 issues"
     asked = {r.url.path for r in fake.asked}
-    assert asked == {"/api/series/", "/api/creator/", "/api/publisher/"}
+    assert asked == {
+        "/api/series/",
+        "/api/creator/",
+        "/api/publisher/",
+        "/api/character/",
+        "/api/universe/",
+    }
+    found = (
+        await client.get("/api/favourites/search", params={"category": "comics", "q": "spider"})
+    ).json()
+    assert [(e["kind"], e["id"]) for e in found] == [("series", 100), ("character", 2)]
+    assert found[1]["image"] == "https://static.metron.test/c2.jpg"
 
 
 async def test_a_series_favourite_has_its_issues_coming_starred(
@@ -81,6 +92,30 @@ async def test_a_writer_and_a_publisher_list_issues_weeks_ahead_and_star_the_wee
     assert any(r.url.params.get("creator_id") == "41" for r in fake.asked)
 
 
+@pytest.mark.parametrize(
+    ("kind", "source_id", "name", "asked"),
+    [
+        ("character", 2, "Spider-Man", "character_id"),
+        ("universe", 122, "Earth 616", "universe_id"),
+    ],
+)
+async def test_a_character_and_a_universe_list_issues_weeks_ahead_and_star_the_week(
+    client: AsyncClient, fake: metron.Metron, kind: str, source_id: int, name: str, asked: str
+) -> None:
+    await comics.prefetch_weeks()
+    await client.post("/api/favourites", json={"category": "comics", "kind": kind, "id": source_id})
+    week = (await client.get("/api/comics/issues")).json()["issues"]
+    assert [c["favourite"] for c in week] == [name, None, None]
+    coming = (await client.get(f"/api/favourites/comics/{kind}/{source_id}")).json()["releases"]
+    assert [c["id"] for c in coming] == ["1", "4"]
+    assert any(r.url.params.get(asked) == str(source_id) for r in fake.asked)
+    assert not [
+        r
+        for r in fake.asked
+        if r.url.path.startswith("/api/issue/") and r.url.path != "/api/issue/"
+    ], "no issue is read for what it credits"
+
+
 async def test_a_hidden_publisher_leaves_the_week(client: AsyncClient, fake: metron.Metron) -> None:
     await comics.prefetch_weeks()
     body = {"mode": "hide", "category": "comics", "kind": "publisher", "id": 1}
@@ -109,9 +144,10 @@ async def test_a_series_is_monitored_once_and_every_new_issue_announced(
     [row] = (await client.get("/api/comics/monitored")).json()
     assert row["next"]["title"] in ("Midnight Spider-Man #1", "Midnight Spider-Man #2")
 
-    sent = await favourites.notify_series()
+    shipped = datetime.combine(comics.ships(metron.this_week()), time(10))
+    sent = await favourites.notify_series(shipped)
     assert sent == len(delivered) >= 1
-    assert await favourites.notify_series() == 0
+    assert await favourites.notify_series(shipped) == 0
 
 
 async def test_any_issue_opens_away_from_a_list(client: AsyncClient, fake: metron.Metron) -> None:

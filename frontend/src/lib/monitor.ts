@@ -51,7 +51,7 @@ export function useComicMonitor(done?: () => void) {
     onSuccess: (series) => {
       settled((rows) => [...rows.filter((row) => row.id !== series.id), series])
       toast.success(
-        series.status === 'added'
+        series.status !== 'monitored'
           ? `${series.series} is in your library`
           : `Monitoring ${series.series}`,
       )
@@ -79,6 +79,7 @@ export function useAddSeries() {
       queryClient.setQueryData(['series', id], added)
       void queryClient.invalidateQueries({ queryKey: ['comic-search'] })
       void queryClient.invalidateQueries({ queryKey: ['comic-latest'] })
+      void queryClient.invalidateQueries({ queryKey: ['comics-monitored'] })
       toast.success(`${added.title} is in your library`)
     },
     onError: failed('Could not add it'),

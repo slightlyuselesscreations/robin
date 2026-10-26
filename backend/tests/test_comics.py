@@ -15,7 +15,7 @@ from tests.conftest import notify_to, stub_http
 
 # 10:00 on the Friday of the week of 7 October 2026.
 FRIDAY = datetime(2026, 10, 9, 10)
-FRIDAY_WEEK = date(2026, 10, 7)
+FRIDAY_WEEK = date(2026, 10, 5)
 
 
 @pytest.fixture(autouse=True)
@@ -46,9 +46,9 @@ def test_an_issue_is_read_for_everything_the_listing_lacks() -> None:
         "synopsis": "A young Peter Parker is transformed & more.",
         "cover_date": "2026-12-01",
         "story_arcs": ["Midnight"],
-        "characters": ["Spider-Man"],
+        "characters": [{"id": 2, "name": "Spider-Man"}],
         "teams": [],
-        "universes": ["Earth 616"],
+        "universes": [{"id": 122, "name": "Earth 616"}],
         "first_appearances": [],
         "variants": [{"name": "Cover B", "image": "https://static.metron.test/1b.jpg"}],
     }
@@ -71,16 +71,17 @@ def test_an_issue_metron_does_not_have_is_not_kept() -> None:
 
 
 @pytest.mark.parametrize(
-    ("today", "wednesday"),
+    ("today", "monday"),
     [
-        (date(2026, 9, 30), date(2026, 9, 30)),
-        (date(2026, 10, 4), date(2026, 9, 30)),
-        (date(2026, 10, 6), date(2026, 9, 30)),
-        (date(2026, 10, 7), date(2026, 10, 7)),
+        (date(2026, 10, 5), date(2026, 10, 5)),
+        (date(2026, 10, 7), date(2026, 10, 5)),
+        (date(2026, 10, 11), date(2026, 10, 5)),
+        (date(2026, 10, 12), date(2026, 10, 12)),
     ],
 )
-def test_the_week_is_the_last_wednesday(today: date, wednesday: date) -> None:
-    assert comics.week_of(today) == wednesday
+def test_the_week_starts_on_monday(today: date, monday: date) -> None:
+    assert comics.week_of(today) == monday
+    assert comics.ships(monday) == monday + timedelta(days=2)
 
 
 def test_the_digest_is_one_block_per_publisher() -> None:
@@ -113,8 +114,8 @@ async def test_a_weeks_firsts_are_grouped_by_publisher_the_main_first(
     listing = fake.asked[0]
     assert listing.url.path == "/api/issue/"
     assert listing.url.params["number"] == "1"
-    assert listing.url.params["store_date_range_after"] == "2026-10-07"
-    assert listing.url.params["store_date_range_before"] == "2026-10-13"
+    assert listing.url.params["store_date_range_after"] == "2026-10-05"
+    assert listing.url.params["store_date_range_before"] == "2026-10-11"
     assert {r.url.path for r in fake.asked[1:]} == {f"/api/series/{s}/" for s in (100, 200, 300)}
     for request in fake.asked:
         assert request.headers["authorization"] == f"Bearer {metron.KEY}"
@@ -157,9 +158,9 @@ async def test_the_digest_names_only_the_picked_publishers(
 
 
 def test_a_pass_reads_the_weeks_its_schedule_reaches() -> None:
-    tuesday = date(2026, 10, 13)
-    assert comics.weeks_ahead(tuesday, [(1, 9)]) == [date(2026, 10, 7), date(2026, 10, 14)]
-    assert comics.weeks_ahead(date(2026, 10, 9), [(1, 9)]) == [date(2026, 10, 7)]
+    sunday = date(2026, 10, 11)
+    assert comics.weeks_ahead(sunday, [(1, 9)]) == [date(2026, 10, 5), date(2026, 10, 12)]
+    assert comics.weeks_ahead(date(2026, 10, 9), [(1, 9)]) == [date(2026, 10, 5)]
 
 
 async def test_an_unreachable_metron_is_an_error_not_an_empty_week(
@@ -278,12 +279,12 @@ async def test_an_issue_is_read_once_when_opened(
 
 def test_the_current_week_is_kept_until_it_ends_one_ahead_a_day_any_before_a_few_hours() -> None:
     wednesday_noon = datetime(2026, 10, 7, 12, tzinfo=UTC)
-    current = comics.week_ttl(date(2026, 10, 7), wednesday_noon)
-    assert current == int(6.5 * 24 * 3600)
-    tuesday_night = datetime(2026, 10, 13, 23, 30, tzinfo=UTC)
-    assert comics.week_ttl(date(2026, 10, 7), tuesday_night) == 1800
-    assert comics.week_ttl(date(2026, 9, 30), wednesday_noon) == comics.ON_DEMAND_TTL
-    assert comics.week_ttl(date(2026, 10, 14), wednesday_noon) == comics.AHEAD_TTL
+    current = comics.week_ttl(date(2026, 10, 5), wednesday_noon)
+    assert current == int(4.5 * 24 * 3600)
+    sunday_night = datetime(2026, 10, 11, 23, 30, tzinfo=UTC)
+    assert comics.week_ttl(date(2026, 10, 5), sunday_night) == 1800
+    assert comics.week_ttl(date(2026, 9, 28), wednesday_noon) == comics.ON_DEMAND_TTL
+    assert comics.week_ttl(date(2026, 10, 12), wednesday_noon) == comics.AHEAD_TTL
 
 
 def test_a_listing_is_kept_a_day_at_most_and_an_hour_while_empty() -> None:

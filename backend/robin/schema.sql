@@ -154,8 +154,9 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at               TEXT NOT NULL
 );
 
--- A comic series monitored from its #1. `year` is the week of that #1, and a source series
--- started earlier is another run of the same name.
+-- A comic series monitored from its #1, or taken in from the Suwayomi library. `year` is the
+-- week of that #1, or the year the source names the run with, and a source series started
+-- earlier is another run of the same name.
 CREATE TABLE IF NOT EXISTS comics (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     issue_id    TEXT    NOT NULL UNIQUE,
@@ -171,6 +172,8 @@ CREATE TABLE IF NOT EXISTS comics (
     suwayomi_id INTEGER,
     -- Issues on the source when the series was added. Zero means it was found before its first.
     issues      INTEGER,
+    -- Issues Suwayomi listed for it at the last library pass. One past it is announced.
+    chapters    INTEGER,
     added_at    TEXT,
     -- Set when the Found panel on Monitored is cleared. Hides the row there and nowhere else.
     cleared_at  TEXT,
@@ -236,7 +239,7 @@ CREATE TABLE IF NOT EXISTS favourites (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     category   TEXT    NOT NULL CHECK (category IN ('games', 'comics', 'screens', 'books')),
     kind       TEXT    NOT NULL
-               CHECK (kind IN ('company', 'franchise', 'collection', 'person', 'studio', 'network', 'author', 'series', 'publisher')),
+               CHECK (kind IN ('company', 'franchise', 'collection', 'person', 'studio', 'network', 'author', 'series', 'publisher', 'character', 'universe')),
     source_id  INTEGER NOT NULL,
     -- Every id it covers, `source_id` among them: TMDB lists one studio under several ids.
     source_ids_json TEXT NOT NULL DEFAULT '[]',
@@ -254,7 +257,7 @@ CREATE TABLE IF NOT EXISTS maker_filters (
     mode       TEXT    NOT NULL CHECK (mode IN ('hide', 'show')),
     category   TEXT    NOT NULL CHECK (category IN ('games', 'comics', 'screens', 'books')),
     kind       TEXT    NOT NULL
-               CHECK (kind IN ('company', 'franchise', 'collection', 'person', 'studio', 'network', 'author', 'series', 'publisher')),
+               CHECK (kind IN ('company', 'franchise', 'collection', 'person', 'studio', 'network', 'author', 'series', 'publisher', 'character', 'universe')),
     source_id  INTEGER NOT NULL,
     -- Every id it covers, `source_id` among them, as for a favourite.
     source_ids_json TEXT NOT NULL DEFAULT '[]',

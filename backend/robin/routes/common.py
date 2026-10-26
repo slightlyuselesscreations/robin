@@ -53,11 +53,13 @@ def tracked_routes(
     path: str,
     table: db.Table,
     shown: Callable[[db.Settings, dict[str, Any]], Awaitable[bool]] | None = None,
+    forget: Callable[[db.Settings, dict[str, Any]], Awaitable[None]] | None = None,
 ) -> None:
     """What every category lists on Monitored: its rows but those Settings hides, `shown`,
     Clear notified, and removing one.
 
-    Removing one only makes Robin forget it. Anything it already handed off stays where it went.
+    Removing one makes Robin forget it, and runs `forget` first, which undoes what Robin handed
+    off. Without it, anything handed off stays where it went.
     """
 
     async def listed() -> list[dict[str, Any]]:
@@ -72,7 +74,10 @@ def tracked_routes(
         db.clear_found(table)
         return Response(status_code=204)
 
-    def remove(row_id: int) -> Response:
+    async def remove(row_id: int) -> Response:
+        found = db.row(table, row_id)
+        if found is not None and forget is not None:
+            await forget(db.get_settings(), found)
         db.delete_row(table, row_id)
         return Response(status_code=204)
 

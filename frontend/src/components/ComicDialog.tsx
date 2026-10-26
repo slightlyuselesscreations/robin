@@ -20,6 +20,7 @@ import {
   Summary,
 } from '@/components/MediaDialog'
 import { FlightNotice } from '@/components/MediaCard'
+import { OpenInSuwayomi } from '@/components/SeriesDialog'
 import { Tip } from '@/components/Page'
 import {
   COMIC_STATE,
@@ -176,9 +177,19 @@ function Body({
               <Fact label="Imprint" value={data.imprint ? [data.imprint] : null} />
               <Fact label="Story arc" value={data.story_arcs} />
               <Fact label="First appearance" value={data.first_appearances} />
-              <Fact label="Characters" value={data.characters} />
+              <FavouriteFact
+                label="Characters"
+                category="comics"
+                kind="character"
+                refs={data.characters}
+              />
               <Fact label="Teams" value={data.teams} />
-              <Fact label="Universe" value={data.universes} />
+              <FavouriteFact
+                label="Universe"
+                category="comics"
+                kind="universe"
+                refs={data.universes}
+              />
             </Facts>
           ) : detail.isError ? (
             <p className="flex items-center gap-1.5 text-xs text-bad">
@@ -232,16 +243,7 @@ function Body({
             monitor
               ? {
                   state: COMIC_STATE[monitor.status],
-                  text: (
-                    <>
-                      {STATE_LABEL[COMIC_STATE[monitor.status]]}
-                      {monitor.status === 'added' && suwayomi && monitor.suwayomi_id ? (
-                        <OutLink href={`${suwayomi}/manga/${monitor.suwayomi_id}`} accent>
-                          Open in Suwayomi
-                        </OutLink>
-                      ) : null}
-                    </>
-                  ),
+                  text: STATE_LABEL[COMIC_STATE[monitor.status]],
                 }
               : null
           }
@@ -254,6 +256,9 @@ function Body({
               onMonitor={() => out && start.mutate({ comic, week: out })}
               onStop={() => monitor && stop.mutate(monitor)}
             />
+            {suwayomi && monitor?.suwayomi_id ? (
+              <OpenInSuwayomi href={`${suwayomi}/manga/${monitor.suwayomi_id}`} />
+            ) : null}
             <CountdownButton
               target={{
                 category: 'comics',

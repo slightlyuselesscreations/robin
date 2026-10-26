@@ -8,8 +8,10 @@ import {
   Layers,
   Library,
   type LucideIcon,
+  Orbit,
   Tv,
   UserRound,
+  VenetianMask,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -40,6 +42,8 @@ export const KIND_LABEL: Record<FavouriteKind, string> = {
   author: 'Authors',
   series: 'Series',
   publisher: 'Publishers',
+  character: 'Characters',
+  universe: 'Universes',
 }
 
 /** The icon each kind of favourite is named with. */
@@ -53,12 +57,14 @@ export const KIND_ICON: Record<FavouriteKind, LucideIcon> = {
   author: BookOpen,
   series: Library,
   publisher: Building2,
+  character: VenetianMask,
+  universe: Orbit,
 }
 
 /** The kinds each category can favourite, in the order they are listed. */
 export const KINDS: Record<FavouriteCategory, FavouriteKind[]> = {
   games: ['company', 'franchise', 'collection'],
-  comics: ['series', 'person', 'publisher'],
+  comics: ['series', 'person', 'publisher', 'character', 'universe'],
   screens: ['person', 'studio', 'network'],
   books: ['author', 'series'],
 }

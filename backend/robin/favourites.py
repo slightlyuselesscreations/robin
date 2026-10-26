@@ -43,7 +43,7 @@ Category = Literal["games", "comics", "screens", "books"]
 KINDS: dict[Category, tuple[str, ...]] = {
     "games": ("company", "franchise", "collection"),
     # A series is what Comics titles search finds, so it is not searched as a kind of its own.
-    "comics": ("series", "person", "publisher"),
+    "comics": ("series", "person", "publisher", "character", "universe"),
     "screens": ("person", "studio", "network"),
     "books": ("author", "series"),
 }
@@ -421,8 +421,9 @@ async def monitor_series(settings: db.Settings, issue: dict[str, Any]) -> dict[s
 
 
 async def notify_series(now: datetime | None = None) -> int:
-    """Send each notice of the comics schedule due for a new issue of a monitored series, and
-    tell of an issue whose date changes, `notices.date_change`. Returns how many were sent.
+    """Send each notice of the comics schedule due for a new issue of a monitored series that
+    Suwayomi does not hold, and tell of an issue whose date changes, `notices.date_change`.
+    Returns how many were sent.
     An issue is marked as a new #1 is, so neither notice repeats the other."""
     settings = db.get_settings()
     channel = settings.notices("comics")
@@ -431,7 +432,8 @@ async def notify_series(now: datetime | None = None) -> int:
         return 0
     sent = 0
     for row in db.rows("comics"):
-        if not row["series_id"]:
+        # Suwayomi announces each issue of a series it holds as it lists it, `sync_library`.
+        if not row["series_id"] or db.comic_tracked(settings, row):
             continue
         try:
             issues = await coming(settings, "comics", "series", [int(row["series_id"])])

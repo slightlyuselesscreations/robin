@@ -73,7 +73,15 @@ USER_AGENT = f"Robin/{__version__} (self-hosted; +https://github.com/{updates.RE
 PAGE = 100
 
 # Where each kind of favourite is read and searched.
-_PATHS = {"series": "/series/", "person": "/creator/", "publisher": "/publisher/"}
+_PATHS = {
+    "series": "/series/",
+    "person": "/creator/",
+    "publisher": "/publisher/",
+    "character": "/character/",
+    "universe": "/universe/",
+}
+# The kinds an issue is credited with, by the filter of Metron's issue list that finds them.
+CREDITED = {"person": "creator_id", "character": "character_id", "universe": "universe_id"}
 
 # Metron's roles as the dialog names them. Writer covers whoever wrote the issue.
 _ROLES = {
@@ -86,8 +94,13 @@ _TAG = re.compile(r"<[^>]+>")
 
 
 def week_of(today: date) -> date:
-    """The Wednesday new comics ship on, today included."""
-    return today - timedelta(days=(today.weekday() - 2) % 7)
+    """The Monday a week starts on, today included."""
+    return today - timedelta(days=today.weekday())
+
+
+def ships(week: date) -> date:
+    """The Wednesday a week's new comics ship on, the day its notices are dated by."""
+    return week + timedelta(days=2)
 
 
 def first_week() -> date:
@@ -306,6 +319,9 @@ def _comic(issue: dict[str, Any]) -> dict[str, Any]:
         "publisher": "",
         "publisher_id": None,
         "series_id": series.get("id"),
+        # Its series' name and the year it began, which a Suwayomi run is matched by.
+        "series": series.get("name"),
+        "year": series.get("year_began"),
         "date": issue.get("store_date"),
         "cover": issue.get("image"),
         "series_url": f"{SITE}/series/{series['id']}/" if series.get("id") else None,
@@ -327,6 +343,11 @@ async def _issues(http: httpx.AsyncClient, **params: str | int) -> list[dict[str
 
 def _names(rows: Any) -> list[str]:
     return [r["name"] for r in rows] if isinstance(rows, list) else []
+
+
+def _refs(rows: Any) -> list[dict[str, Any]]:
+    """Each with the id it opens as a favourite by."""
+    return [{"id": r["id"], "name": r["name"]} for r in rows] if isinstance(rows, list) else []
 
 
 def parse_detail(issue: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -362,9 +383,9 @@ def parse_detail(issue: dict[str, Any] | None) -> dict[str, Any] | None:
         "synopsis": _text(issue.get("desc") or ""),
         "cover_date": issue.get("cover_date"),
         "story_arcs": _names(issue.get("arcs")),
-        "characters": _names(issue.get("characters")),
+        "characters": _refs(issue.get("characters")),
         "teams": _names(issue.get("teams")),
-        "universes": _names(issue.get("universes")),
+        "universes": _refs(issue.get("universes")),
         # Metron names no first appearance on an issue.
         "first_appearances": [],
         "variants": [
@@ -376,7 +397,7 @@ def parse_detail(issue: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def _detail_key(comic_id: str, modified: str | None) -> str:
-    return f"comics:detail:v7:{comic_id}:{modified or ''}"
+    return f"comics:detail:v8:{comic_id}:{modified or ''}"
 
 
 def details(comics: list[dict[str, Any]]) -> dict[str, dict[str, Any] | None]:
@@ -449,7 +470,7 @@ async def week_listing(week: date) -> dict[str, list[dict[str, Any]]]:
 
     try:
         listed: list[dict[str, Any]] = await db.remember(
-            f"comics:firsts:v2:{week.isoformat()}", lambda found: listing_ttl(week, found), read
+            f"comics:firsts:v3:{week.isoformat()}", lambda found: listing_ttl(week, found), read
         )
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         log.warning("comics: listing %s failed: %s", week, exc)
@@ -470,7 +491,7 @@ async def week_issues(week: date) -> list[dict[str, Any]]:
             return await _issues(http, **_days(week))
 
     found: list[dict[str, Any]] = await db.remember(
-        f"comics:issues:v4:{week.isoformat()}", lambda listed: listing_ttl(week, listed), read
+        f"comics:issues:v5:{week.isoformat()}", lambda listed: listing_ttl(week, listed), read
     )
     return with_publishers([dict(c) for c in found])
 
@@ -483,11 +504,11 @@ def weeks_ahead(today: date, slots: list[tuple[int, int]]) -> list[date]:
 
 async def notify_new_firsts(now: datetime | None = None) -> int:
     """Send each week's new #1s as one digest, at the first notice of the comics schedule due
-    for its Wednesday. Returns how many digests were sent.
+    for the day it ships. Returns how many digests were sent.
 
     Runs on the hourly loop. Each #1 is in one digest only, so a later notice of the schedule
     sends again only for #1s Metron added since. An issue of the current week is still
-    announced after its Wednesday, until the week ends. Issues are marked only once the digest
+    announced after it ships, until the week ends. Issues are marked only once the digest
     went out, so a failure is retried on the next pass. Nothing is sent while the carry-over
     from Comic Vine is still to run.
     """
@@ -515,7 +536,8 @@ async def _announce_week(
         if picked and publisher_id not in picked:
             continue
         for comic in await credit(settings, listed):
-            if hidden.comic(settings, made(comic)) and window.pending(week, seen(comic), grace=6):
+            due = window.pending(ships(week), seen(comic), grace=4)
+            if hidden.comic(settings, made(comic)) and due:
                 fresh.setdefault(comic["publisher"], []).append(comic)
     if not fresh:
         return 0
@@ -560,7 +582,9 @@ def _entity(kind: str, raw: dict[str, Any]) -> dict[str, Any]:
             if part
         )
     else:
-        meta = "Creator" if kind == "person" else "Publisher"
+        meta = {"person": "Creator", "character": "Character", "universe": "Universe"}.get(
+            kind, "Publisher"
+        )
     # A series is named with its first year in a list, "Batman (2016)", and without in detail.
     name = raw.get("name") or raw.get("series") or ""
     if kind == "series" and raw.get("year_began") and not name.endswith(")"):
@@ -570,7 +594,7 @@ def _entity(kind: str, raw: dict[str, Any]) -> dict[str, Any]:
         "kind": kind,
         "id": raw["id"],
         "name": name,
-        "image": raw.get("image") if kind == "person" else None,
+        "image": raw.get("image") if kind in ("person", "character") else None,
         "meta": meta or "Series",
         "url": f"{SITE}{_PATHS[kind]}{raw['id']}/",
         "ids": [raw["id"]],
@@ -580,8 +604,8 @@ def _entity(kind: str, raw: dict[str, Any]) -> dict[str, Any]:
 
 
 async def search_favourites(query: str, kind: str | None = None) -> list[dict[str, Any]]:
-    """Series, creators and publishers whose name holds `query`, one call each, or only those
-    of `kind`."""
+    """Series, creators, publishers, characters and universes whose name holds `query`, one
+    call each, or only those of `kind`."""
     kinds = [kind] if kind in _PATHS else list(_PATHS)
 
     async def read() -> list[dict[str, Any]]:
@@ -599,7 +623,8 @@ async def search_favourites(query: str, kind: str | None = None) -> list[dict[st
 
 
 async def favourite(kind: str, source_id: int) -> dict[str, Any] | None:
-    """One series, creator or publisher, None when Metron has no such one."""
+    """One series, creator, publisher, character or universe, None when Metron has no such
+    one."""
 
     async def read() -> dict[str, Any] | None:
         async with client() as http:
@@ -613,8 +638,9 @@ async def favourite(kind: str, source_id: int) -> dict[str, Any] | None:
 
 
 async def favourite_releases(kind: str, ids: list[int]) -> list[dict[str, Any]]:
-    """What a favourite has coming from the first of the month on, one call each: a series' and
-    a creator's issues, a publisher's up to `PUBLISHER_REACH` ahead."""
+    """What a favourite has coming from the first of the month on, one call each: the issues of
+    a series and those crediting a creator, character or universe, a publisher's up to
+    `PUBLISHER_REACH` ahead."""
     start = db.month_start()
     after = {"store_date_range_after": start.isoformat()}
     found: list[dict[str, Any]] = []
@@ -622,8 +648,8 @@ async def favourite_releases(kind: str, ids: list[int]) -> list[dict[str, Any]]:
         for source_id in ids:
             if kind == "series":
                 found += await _issues(http, series_id=source_id, **after)
-            elif kind == "person":
-                found += await _issues(http, creator_id=source_id, **after)
+            elif kind in CREDITED:
+                found += await _issues(http, **{CREDITED[kind]: source_id}, **after)
             else:
                 before = (start + PUBLISHER_REACH).isoformat()
                 listed = await _issues(
@@ -640,47 +666,55 @@ async def favourite_releases(kind: str, ids: list[int]) -> list[dict[str, Any]]:
 
 
 async def credit(settings: db.Settings, found: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Set on each issue, as `person_ids`, the creators it credits that are a favourite, or
-    hidden or shown in Settings, from each one's issues from the first of the month, one call a
-    creator kept a day, so no issue is read for its credits. A creator Metron fails for is left
-    out until it answers."""
-    people = {i for f in db.favourites("comics") if f["kind"] == "person" for i in f["ids"]}
+    """Set on each issue, as `person_ids`, `character_ids` and `universe_ids`, the creators,
+    characters and universes it credits that are a favourite, or hidden or shown in Settings,
+    from each one's issues from the first of the month, one call each kept a day, so no issue
+    is read for its credits. One Metron fails for is left out until it answers."""
+    wanted = {
+        (f["kind"], i) for f in db.favourites("comics") if f["kind"] in CREDITED for i in f["ids"]
+    }
     for makers in (settings.hidden_makers, settings.shown_makers):
-        people |= makers.get("comics", {}).get("person", frozenset())
-    for person in sorted(people):
+        for kind in CREDITED:
+            wanted |= {(kind, i) for i in makers.get("comics", {}).get(kind, frozenset())}
+    for kind, source_id in sorted(wanted):
 
-        async def read(person: int = person) -> list[str]:
+        async def read(kind: str = kind, source_id: int = source_id) -> list[str]:
             after = db.month_start().isoformat()
+            filtered: dict[str, str | int] = {CREDITED[kind]: source_id}
             async with client() as http:
-                listed = await _paged(
-                    http, "/issue/", creator_id=person, store_date_range_after=after
-                )
+                listed = await _paged(http, "/issue/", store_date_range_after=after, **filtered)
             return [str(i["id"]) for i in listed]
 
         try:
-            ids = set(await db.remember(f"comics:credited:v1:{person}", AHEAD_TTL, read))
+            ids = set(await db.remember(f"comics:credited:v2:{kind}:{source_id}", AHEAD_TTL, read))
         except (httpx.HTTPError, ValueError, upstream.UpstreamError) as exc:
-            log.warning("comics: creator %s failed: %s", person, exc)
+            log.warning("comics: %s %s failed: %s", kind, source_id, exc)
             continue
         for comic in found:
             if comic["id"] in ids:
-                comic.setdefault("person_ids", []).append(person)
+                comic.setdefault(f"{kind}_ids", []).append(source_id)
     return found
 
 
 def made(comic: dict[str, Any]) -> dict[str, list[int]]:
-    """Who and what made an issue, by kind of favourite: its people as `credit` set them, and
+    """Who and what made an issue, by kind of favourite: its credits as `credit` set them, and
     any its details name once it was opened."""
     detail = (comic["detail"] if "detail" in comic else cached_detail(comic)) or {}
+    opened = {
+        "person": detail.get("person_ids") or [],
+        "character": [c["id"] for c in detail.get("characters") or []],
+        "universe": [u["id"] for u in detail.get("universes") or []],
+    }
     return {
         "series": [comic["series_id"]] if comic.get("series_id") else [],
         "publisher": [comic["publisher_id"]] if comic.get("publisher_id") else [],
-        "person": sorted({*comic.get("person_ids", []), *(detail.get("person_ids") or [])}),
+        **{kind: sorted({*comic.get(f"{kind}_ids", []), *opened[kind]}) for kind in CREDITED},
     }
 
 
 def star(comics: list[dict[str, Any]], favourites: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Name on each issue the favourite it comes from: its series, publisher or a creator."""
+    """Name on each issue the favourite it comes from: its series, publisher, a creator, a
+    character or a universe."""
     by = {(f["kind"], i): f["name"] for f in favourites for i in f["ids"]}
     for comic in comics:
         comic["favourite"] = next(

@@ -1,7 +1,7 @@
 """Favourites: what releases come from, starred, and the notice for each new one.
 
 A favourite is a game company, franchise or series on IGDB, a series, person or publisher on
-Comic Vine, a person, studio or network on TMDB, or an author or series on Hardcover. Each
+Metron, a person, studio or network on TMDB, or an author or series on Hardcover. Each
 category's search finds them beside its titles.
 A favourite's new releases are announced on the category's topic, at each notice of its
 schedule, when its notices and its favourites switch are on, and never for a title the user
@@ -49,20 +49,25 @@ KINDS: dict[Category, tuple[str, ...]] = {
 }
 
 COMING_PREFIX = "favourite:coming:v4:"
-# As a category's page, but for comics: Comic Vine is asked about as rarely as can be.
+# As a category's page, but for comics, whose publisher and creator lists run months ahead.
 COMING_TTL = 3600
 COMICS_COMING_TTL = 6 * 3600
 
 
 async def search(
-    settings: db.Settings, category: Category, query: str, everything: bool = False
+    settings: db.Settings,
+    category: Category,
+    query: str,
+    everything: bool = False,
+    kind: str | None = None,
 ) -> list[dict[str, Any]]:
     """What can be favourited in the category, matching `query`, each with `ids`. A maker
-    hidden is left out, unless `everything` is asked for, as Settings picking filters does."""
+    hidden is left out, unless `everything` is asked for, as Settings picking filters does.
+    `kind` narrows comics to one kind, a call to Metron each."""
     if category == "games":
         found = await igdb.search_favourites(query)
     elif category == "comics":
-        found = await comics.search_favourites(query)
+        found = await comics.search_favourites(query, kind)
     elif category == "screens":
         found = await tmdb.search_favourites(settings, query)
     else:
@@ -252,7 +257,7 @@ def _monitored(category: Category) -> set[str]:
     if category == "games":
         return {str(r["igdb_id"]) for r in db.rows("requests")}
     if category == "comics":
-        return {f"volume-{r['volume_id']}" for r in db.rows("comics") if r["volume_id"]}
+        return {f"series-{r['series_id']}" for r in db.rows("comics") if r["series_id"]}
     if category == "screens":
         return {f"{r['kind']}-{r['tmdb_id']}" for r in db.rows("reminders")}
     return {str(r["hardcover_id"]) for r in db.rows("book_reminders")}
@@ -261,7 +266,7 @@ def _monitored(category: Category) -> set[str]:
 def _monitor_key(category: Category, release: dict[str, Any]) -> str:
     """What monitoring a release monitors: a comic's series, anything else the release itself."""
     if category == "comics":
-        return f"volume-{release['volume_id']}"
+        return f"series-{release['series_id']}"
     return str(_brief(category, release)["key"])
 
 
@@ -278,6 +283,9 @@ async def notify_favourites(now: datetime | None = None) -> int:
     settings = db.get_settings()
     sent = 0
     for category in KINDS:
+        # Comics waits for the carry-over from Comic Vine, its ids not yet Metron's.
+        if category == "comics" and db.comicvine_pending():
+            continue
         channel = settings.favourite_notices(category)
         window = notices.window(settings, category, now)
         if channel is None or window is None:
@@ -331,6 +339,9 @@ async def monitor_favourites() -> int:
     settings = db.get_settings()
     added = 0
     for category in KINDS:
+        # Comics waits for the carry-over from Comic Vine, its ids not yet Metron's.
+        if category == "comics" and db.comicvine_pending():
+            continue
         if not settings.favourites_monitor(category):
             continue
         stars = db.favourites(category)
@@ -398,7 +409,7 @@ async def monitor_series(settings: db.Settings, issue: dict[str, Any]) -> dict[s
         publisher=issue.get("publisher") or "",
         url=issue["url"],
         cover=issue.get("cover"),
-        volume_id=issue.get("volume_id"),
+        series_id=issue.get("series_id"),
     )
     if comic["status"] == "monitored" and settings.suwayomi_ready:
         try:
@@ -415,14 +426,14 @@ async def notify_series(now: datetime | None = None) -> int:
     settings = db.get_settings()
     channel = settings.notices("comics")
     window = notices.window(settings, "comics", now)
-    if channel is None or window is None:
+    if channel is None or window is None or db.comicvine_pending():
         return 0
     sent = 0
     for row in db.rows("comics"):
-        if not row["volume_id"]:
+        if not row["series_id"]:
             continue
         try:
-            issues = await coming(settings, "comics", "series", [int(row["volume_id"])])
+            issues = await coming(settings, "comics", "series", [int(row["series_id"])])
         except upstream.UpstreamError as exc:
             log.warning("comics: could not read %s: %s", row["series"], exc)
             continue

@@ -33,7 +33,7 @@ import {
 import { useArrAdd } from '@/lib/arr'
 import { useBookReminders, useShelf } from '@/lib/bookReminders'
 import { SOURCE, useFavourite, useMakerFilter } from '@/lib/favourites'
-import { comicMonitorOf, fromComicVine } from '@/lib/items'
+import { comicMonitorOf, fromMetron } from '@/lib/items'
 import { useAddSeries, useComicMonitor, useGameMonitor } from '@/lib/monitor'
 import { currentChoice, reminderChoices, typesFor, useReminders } from '@/lib/reminders'
 import { useSettings } from '@/lib/categories'
@@ -115,9 +115,7 @@ export function ComicMenu({ comic, week }: { comic: Comic; week?: string }) {
           Monitor
         </ContextMenuItem>
       ) : null}
-      <OutItem href={comic.url}>
-        {fromComicVine(comic) ? 'Comic Vine' : 'League of Comic Geeks'}
-      </OutItem>
+      <OutItem href={comic.url}>{fromMetron(comic) ? 'Metron' : 'League of Comic Geeks'}</OutItem>
     </>
   )
 }

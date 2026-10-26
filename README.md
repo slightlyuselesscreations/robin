@@ -64,7 +64,7 @@ Simply put, `Robin` monitors upcoming release dates, tracks changes automaticall
 | **Games** | `IGDB` | Upcoming PC, PlayStation, Xbox and Nintendo games | `Prowlarr` and `qBittorrent`, PC games only |
 | **Screens** | `TMDB` | Upcoming movies and shows for a configured region | `Radarr` and `Sonarr` |
 | **Books** | `Hardcover` | Upcoming books and managing your `Want to Read` list on `Hardcover`. | `TBD` |
-| **Comics** | `Comic Vine` | Every comic released this week, with the #1 issues marked and a publisher filter. | `Suwayomi` |
+| **Comics** | `Metron` | Every comic released each week, this week first, with the #1 issues marked and a publisher filter. | `Suwayomi` |
 
 And across these categories, other features include:
 
@@ -221,7 +221,7 @@ Or run it from source with [uv](https://docs.astral.sh/uv/) and [pnpm](https://p
 
 [FastAPI](https://fastapi.tiangolo.com) · SQLite · [httpx](https://www.python-httpx.org) · [React](https://react.dev) · [Vite](https://vite.dev) · [Tailwind](https://tailwindcss.com) · [shadcn/ui](https://ui.shadcn.com) · [TanStack](https://tanstack.com)
 
-Data from [`IGDB`](https://www.igdb.com), [`TMDB`](https://www.themoviedb.org), [`Hardcover`](https://hardcover.app), [`Comic Vine`](https://comicvine.gamespot.com) and [`PreDB`](https://predb.net). 
+Data from [`IGDB`](https://www.igdb.com), [`TMDB`](https://www.themoviedb.org), [`Hardcover`](https://hardcover.app), [`Metron`](https://metron.cloud) and [`PreDB`](https://predb.net). 
 
 *This product uses the `TMDB` API but is not endorsed or certified by `TMDB`.*
 

@@ -56,7 +56,7 @@ Schedule = Annotated[list[Notice], Field(max_length=10)]
 
 
 class Publisher(BaseModel):
-    """A Comic Vine publisher, by its id, named as Comic Vine names it."""
+    """A Metron publisher, by its id, named as Metron names it."""
 
     id: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=200)
@@ -132,7 +132,7 @@ class SettingsOut(BaseModel):
     sonarr_root: str
     sonarr_add: bool
     has_hardcover_token: bool
-    has_comicvine_token: bool
+    has_metron_token: bool
     books_hidden_literary_types: list[int]
     books_hidden_categories: list[int]
     books_hidden_genres: list[str]
@@ -222,7 +222,7 @@ class SettingsPatch(BaseModel):
     sonarr_root: str | None = Field(default=None, max_length=500)
     sonarr_add: bool | None = None
     hardcover_token: str | None = None
-    comicvine_token: str | None = None
+    metron_token: str | None = None
     books_hidden_literary_types: list[Annotated[int, Field(ge=1, le=2)]] | None = None
     books_hidden_categories: list[Annotated[int, Field(ge=1, le=20)]] | None = Field(
         default=None, max_length=20
@@ -351,7 +351,7 @@ class Health(BaseModel):
     igdb: ServiceHealth
     tmdb: ServiceHealth
     hardcover: ServiceHealth
-    comicvine: ServiceHealth
+    metron: ServiceHealth
     prowlarr: ServiceHealth
     predb: ServiceHealth
     suwayomi: ServiceHealth
@@ -362,7 +362,7 @@ class Health(BaseModel):
     backups: ServiceHealth
 
 
-HEALTH_CACHE_KEY = "health:v12"
+HEALTH_CACHE_KEY = "health:v13"
 # Home reads it on every visit. A minute keeps it current without asking five servers each time.
 HEALTH_TTL = 60
 
@@ -414,7 +414,7 @@ async def _probe() -> dict[str, Any]:
         igdb_h,
         tmdb_h,
         hardcover_h,
-        comicvine_h,
+        metron_h,
         prowlarr_h,
         predb_h,
         suwayomi_h,
@@ -442,7 +442,7 @@ async def _probe() -> dict[str, Any]:
             suwayomi.source_name(settings),
             _missing(
                 {"an address": settings.suwayomi_url, "a source ID": settings.suwayomi_source_id},
-                {"Comic Vine": settings.comics_ready},
+                {"Metron": settings.comics_ready},
             ),
         ),
         _check(settings.qbittorrent_ready, qbittorrent.version(settings)),
@@ -469,7 +469,7 @@ async def _probe() -> dict[str, Any]:
         igdb=igdb_h,
         tmdb=tmdb_h,
         hardcover=hardcover_h,
-        comicvine=comicvine_h,
+        metron=metron_h,
         prowlarr=prowlarr_h,
         predb=predb_h,
         suwayomi=suwayomi_h,

@@ -130,7 +130,7 @@ const REPORTED_ONLY = [
   'tmdb_ready',
   'screen_notices_ready',
   'has_hardcover_token',
-  'has_comicvine_token',
+  'has_metron_token',
   'hardcover_ready',
   'books_notices_ready',
   'has_backup_passphrase',
@@ -166,7 +166,7 @@ type Form = Partial<Settings> & {
   qbittorrent_api_key?: string
   tmdb_token?: string
   hardcover_token?: string
-  comicvine_token?: string
+  metron_token?: string
   radarr_api_key?: string
   sonarr_api_key?: string
   backup_passphrase?: string
@@ -356,7 +356,7 @@ type Secret =
   | 'qbittorrent_api_key'
   | 'tmdb_token'
   | 'hardcover_token'
-  | 'comicvine_token'
+  | 'metron_token'
   | 'radarr_api_key'
   | 'sonarr_api_key'
   | 'backup_passphrase'
@@ -1303,11 +1303,11 @@ const SOURCES = {
     Panel: IgdbPanel,
   },
   comics: {
-    key: 'comicvine',
+    key: 'metron',
     ready: 'comics_ready',
     question: 'Are you a comic book reader?',
     data: 'comic',
-    Panel: ComicVinePanel,
+    Panel: MetronPanel,
   },
   screens: {
     key: 'tmdb',
@@ -1405,15 +1405,15 @@ function IgdbPanel({ form, setForm, stored }: StoredProps) {
   )
 }
 
-function ComicVinePanel({ form, setForm, stored }: StoredProps) {
+function MetronPanel({ form, setForm, stored }: StoredProps) {
   return (
     <Panel
-      title="Comic Vine"
+      title="Metron"
       icon={BookOpen}
-      note={<KeyLink href="https://comicvine.gamespot.com/api/" />}
+      note={<KeyLink href="https://metron.cloud/accounts/profile/" />}
     >
       <SecretField
-        name="comicvine_token"
+        name="metron_token"
         label="API key"
         form={form}
         setForm={setForm}
@@ -2127,8 +2127,8 @@ function MakerSearch({
     return () => clearTimeout(wait)
   }, [term])
   const found = useQuery({
-    queryKey: ['maker-search', category, asked],
-    queryFn: () => api.searchFavourites(category, asked, true),
+    queryKey: ['maker-search', category, asked, kind],
+    queryFn: () => api.searchFavourites(category, asked, true, kind),
     enabled: asked.length >= 2,
     staleTime: 10 * 60_000,
   })
@@ -2309,7 +2309,7 @@ function ComicsTab({ form, setForm, stored }: TabProps & { stored: Settings }) {
   )
 }
 
-/** Comic Vine publishers, searched as a favourite's are, kept with their names. */
+/** Metron publishers, searched as a favourite's are, kept with their names. */
 function DigestPublishers({
   picked,
   onChange,

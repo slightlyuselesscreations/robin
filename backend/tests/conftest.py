@@ -21,10 +21,10 @@ Handler = Callable[[httpx.Request], httpx.Response]
 
 
 @pytest.fixture(autouse=True)
-def quick_comicvine(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Comic Vine is asked a second apart, which no test needs to wait for."""
+def quick_metron(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Metron is asked at its pace, which no test needs to wait for."""
     monkeypatch.setitem(
-        upstream.LIMITS, "comicvine", dataclasses.replace(upstream.LIMITS["comicvine"], per=0.0)
+        upstream.LIMITS, "metron", dataclasses.replace(upstream.LIMITS["metron"], per=0.0)
     )
 
 

@@ -157,7 +157,7 @@ async def test_a_service_partly_set_says_what_it_still_needs(client: AsyncClient
     )
     body = (await client.get("/api/settings/health", params={"refresh": True})).json()
     assert body["prowlarr"] == {"state": "unset", "error": "Needs an API key", "until": None}
-    assert body["suwayomi"]["error"] == "Needs a source ID and Comic Vine"
+    assert body["suwayomi"]["error"] == "Needs a source ID and Metron"
     assert body["radarr"]["error"] == "Needs an API key and TMDB"
     assert body["sonarr"]["error"] == ""
 
@@ -177,8 +177,8 @@ async def test_a_service_that_does_not_answer_is_faulty_with_the_reason(
 
 def test_comics_is_shown_once_its_key_is_set() -> None:
     assert db.get_settings().comics_ready is False
-    db.save_settings({"comicvine_token": " cv-key "})
-    assert db.get_settings().comicvine_key == "cv-key"
+    db.save_settings({"metron_token": " metron-key "})
+    assert db.get_settings().metron_key == "metron-key"
     assert db.get_settings().comics_ready is True
 
 
@@ -245,5 +245,5 @@ def test_every_source_and_integration_is_checked() -> None:
         if name.endswith("_ready") and isinstance(value, property)
     }
     assert "igdb" in ready and "notify" in ready
-    named = {"comics": "comicvine"}
+    named = {"comics": "metron"}
     assert {named.get(name, name) for name in ready} <= set(Health.model_fields)

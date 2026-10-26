@@ -1,14 +1,16 @@
-"""New #1 comics from Comic Vine, sent as Comics notifications.
+"""Comics from Metron: each week's issues, their details, and the #1s sent as Comics
+notifications.
 
-A week is two calls: every #1 with a store date in it, then their volumes in one call, which is
-where the publisher is. An issue's credits and synopsis are one more call each. The current
-week is read once, its listing and then each issue, all kept until the week is over. A week
-ahead is kept a day, read when the comics schedule reaches it. Any other week is read when the
-Comics page asks for it, an issue only when it is opened, each kept a few hours.
+A week's listing is one call per hundred issues and names each issue's series, not its
+publisher, which only a series or an issue's detail names. Each series' publisher is kept on its
+own, read from every detail and every series Robin sees, so a list draws it from what is kept
+and the hourly pass reads what it lacks. The current week's details are read by that pass and
+kept until the week ends.
 """
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import re
@@ -21,60 +23,69 @@ from robin import __version__, db, hidden, notices, notify, updates, upstream
 
 log = logging.getLogger(__name__)
 
-API = "https://comicvine.gamespot.com/api"
+API = "https://metron.cloud/api"
+SITE = "https://metron.cloud"
 
-# Comic Vine publisher ids, in the order the Comics page shows them. The name is for a box
-# with nothing in it, a notice takes the publisher Comic Vine names on the volume.
+# Metron publisher ids, in the order the #1 digest and a list ordered by publisher take them
+# first. The name is for a publisher with nothing in a week.
 PUBLISHERS = {
-    "31": "Marvel",
-    "10": "DC Comics",
-    "513": "Image",
-    "1868": "Boom! Studios",
+    "1": "Marvel",
+    "2": "DC Comics",
+    "4": "Image Comics",
+    "20": "Boom! Studios",
 }
 
 # How long a week other than the current one, or an issue from it, is kept once asked for.
 ON_DEMAND_TTL = 4 * 3600
 
-# How long a week ahead is kept. Comic Vine fills a week in as it comes closer.
+# How long a week ahead, and the current week's listing at most, is kept. Metron adds to a
+# week as it comes closer.
 AHEAD_TTL = 24 * 3600
 
-# How long a week's listing that came back empty is kept. Comic Vine fills a week in about when
-# it starts, so one read at midnight can find nothing yet.
+# How long a week's listing that came back empty is kept.
 EMPTY_TTL = 3600
 
-# ntfy turns a body over 4096 bytes into an attachment, and most services cut one shorter.
+# Most services cut a notification body shorter than this.
 MAX_BODY_BYTES = 3800
 
 # Long enough that a week's issues never come back as new.
 SEEN_SECONDS = 90 * 24 * 3600
 
-# Comic Vine refuses a client that does not name itself.
-USER_AGENT = f"Robin/{__version__} (self-hosted; +https://github.com/{updates.REPOSITORY})"
-
-# Comic Vine's most per page, for the issue list and for volumes asked for by id.
-PAGE = 100
-
-# How long a search, and a series, person or publisher, is kept.
+# How long a search, and a series, creator or publisher, is kept, and a series' publisher.
 SEARCH_TTL = 3600
 ENTITY_TTL = 24 * 3600
+PUBLISHER_OF_SECONDS = 90 * 24 * 3600
 
-# What Comic Vine calls each kind of favourite, and where one of each is read.
-RESOURCES = {"volume": "series", "person": "person", "publisher": "publisher"}
-_ENTITY_PATH = {
-    "series": "/volume/4050-{}/",
-    "person": "/person/4040-{}/",
-    "publisher": "/publisher/4010-{}/",
+# How far ahead a publisher's issues are listed for its favourite, a big one has hundreds.
+PUBLISHER_REACH = timedelta(days=90)
+
+# Metron names itself what Robin is, in the User-Agent.
+USER_AGENT = f"Robin/{__version__} (self-hosted; +https://github.com/{updates.REPOSITORY})"
+
+# Metron's most per page.
+PAGE = 100
+
+# Where each kind of favourite is read and searched.
+_PATHS = {"series": "/series/", "person": "/creator/", "publisher": "/publisher/"}
+
+# Metron's roles as the dialog names them. Writer covers whoever wrote the issue.
+_ROLES = {
+    "Script": "Writer",
+    "Story": "Writer",
+    "Plot": "Writer",
+    "Cover": "Cover Artist",
 }
-_ENTITY_FIELDS = "id,name,image,publisher,start_year,count_of_issues,site_detail_url,deck"
-
-# Comic Vine writes roles in lower case, two of them under names of its own.
-_ROLES = {"penciler": "Penciller", "cover": "Cover Artist"}
 _TAG = re.compile(r"<[^>]+>")
 
 
 def week_of(today: date) -> date:
     """The Wednesday new comics ship on, today included."""
     return today - timedelta(days=(today.weekday() - 2) % 7)
+
+
+def first_week() -> date:
+    """The earliest week listed, the one the first of this month falls in."""
+    return week_of(db.month_start())
 
 
 def week_ttl(week: date, now: datetime) -> int:
@@ -91,7 +102,7 @@ def week_ttl(week: date, now: datetime) -> int:
 
 def listing_ttl(week: date, found: Any) -> int:
     """How long a week's listing is kept: an hour while it is empty, at most a day for the
-    current week, since Comic Vine adds to a week as it goes, and as `week_ttl` otherwise."""
+    current week, since Metron adds to a week as it goes, and as `week_ttl` otherwise."""
     if not (any(found.values()) if isinstance(found, dict) else found):
         return EMPTY_TTL
     return min(week_ttl(week, datetime.now(UTC)), AHEAD_TTL)
@@ -124,184 +135,213 @@ def digest(by_publisher: dict[str, list[dict[str, Any]]]) -> str:
 
 
 def _seen_key(comic: dict[str, Any]) -> str:
-    return f"comics:seen:{comic['id']}"
+    return f"comics:seen:v2:{comic['id']}"
 
 
 def seen(comic: dict[str, Any]) -> str | None:
-    """The notice last sent for an issue, as `notices` marks it. One announced when each had a
-    single notice reads as every notice sent."""
+    """The notice last sent for an issue, as `notices` marks it."""
     found = db.cache_get(_seen_key(comic))
-    if found is None:
-        return None
-    return found if isinstance(found, str) else f"*|{db.SENT_ALL}"
+    return found if isinstance(found, str) else None
 
 
 def mark_seen(comic: dict[str, Any], marker: str) -> None:
     db.cache_put(_seen_key(comic), marker, SEEN_SECONDS)
 
 
+def _dated_key(comic: dict[str, Any]) -> str:
+    return f"comics:dated:v2:{comic['id']}"
+
+
 def dated_as(comic: dict[str, Any]) -> str | None:
     """The date an issue of a monitored series was last read as, for `notices.date_change`.
     None until it is first read."""
-    found = db.cache_get(f"comics:dated:{comic['id']}")
+    found = db.cache_get(_dated_key(comic))
     return found if isinstance(found, str) else None
 
 
 def mark_dated_as(comic: dict[str, Any], value: str) -> None:
-    db.cache_put(f"comics:dated:{comic['id']}", value, SEEN_SECONDS)
+    db.cache_put(_dated_key(comic), value, SEEN_SECONDS)
 
 
 def client() -> httpx.AsyncClient:
-    """The only way anything reaches Comic Vine. Every request then goes through `_get`."""
+    """The only way anything reaches Metron. Every request then goes through `_get`."""
     settings = db.get_settings()
     if not settings.comics_ready:
-        raise upstream.NotConfigured("Comics needs a Comic Vine API key. Add it in Settings.")
+        raise upstream.NotConfigured("Comics needs a Metron API key. Add it in Settings.")
     return httpx.AsyncClient(
         base_url=API,
-        headers={"User-Agent": USER_AGENT},
-        params={"api_key": settings.comicvine_key, "format": "json"},
+        headers={"User-Agent": USER_AGENT, "Authorization": f"Bearer {settings.metron_key}"},
         timeout=20,
     )
 
 
-async def _get(http: httpx.AsyncClient, path: str, **params: str | int) -> dict[str, Any]:
-    """One call to Comic Vine, in its turn. A refusal pauses it and raises RateLimited.
+# Metron calls a page is waiting on. Every other call, the hourly loop's, waits while there are
+# any, so a page never queues behind a week of issue details.
+_pages_waiting = 0
 
-    Comic Vine also answers errors in the body, a `status_code` other than 1, raised as
-    ValueError. An object it does not have, 101, is answered with no results.
-    """
-    async with upstream.slot("comicvine"):
-        resp = await http.get(path, params=params)
+
+async def _get(http: httpx.AsyncClient, path: str, **params: str | int) -> dict[str, Any] | None:
+    """One call to Metron, in its turn, a page's ahead of the hourly loop's. A refusal pauses it
+    and raises RateLimited. What Metron does not have, a 404, is None."""
+    global _pages_waiting
+    page = db.STALE.get() is not None
+    if page:
+        _pages_waiting += 1
+    else:
+        while _pages_waiting:
+            await asyncio.sleep(0.5)
+    try:
+        async with upstream.slot("metron"):
+            resp = await http.get(path, params=params)
+    finally:
+        if page:
+            _pages_waiting -= 1
+    if resp.status_code == 404:
+        return None
     if resp.status_code >= 400:
-        upstream.observe("comicvine", resp.status_code, resp.headers.get("retry-after"))
+        upstream.observe("metron", resp.status_code, resp.headers.get("retry-after"))
     resp.raise_for_status()
     body: dict[str, Any] = resp.json()
-    if body.get("status_code") == 101:
-        return {**body, "results": None}
-    if body.get("status_code") != 1:
-        raise ValueError(f"Comic Vine: {body.get('error') or 'no answer'}")
     return body
 
 
 async def ping() -> None:
     """One live call, for Health: the publisher list, one row of it."""
     async with client() as http:
-        await _get(http, "/publishers/", limit=1, field_list="id")
+        await _get(http, "/publisher/", page_size=1)
 
 
 async def _paged(http: httpx.AsyncClient, path: str, **params: str | int) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
+    page = 1
     while True:
-        body = await _get(http, path, limit=PAGE, offset=len(found), **params)
-        found += body["results"]
-        if not body["results"] or len(found) >= body["number_of_total_results"]:
+        body = await _get(http, path, page_size=PAGE, page=page, **params) or {}
+        found += body.get("results") or []
+        if not body.get("next"):
             return found
+        page += 1
 
 
-def _comic(issue: dict[str, Any], volume: dict[str, Any]) -> dict[str, Any]:
-    """An issue as every list carries it, with the series and publisher ids it is made by."""
-    image = issue.get("image") or {}
-    publisher = volume.get("publisher") or {}
-    return {
-        "id": str(issue["id"]),
-        "title": f"{volume['name']} #{issue['issue_number']}",
-        "number": issue["issue_number"],
-        "url": issue["site_detail_url"],
-        "publisher": publisher.get("name") or "",
-        "publisher_id": publisher.get("id"),
-        "volume_id": volume["id"],
-        "date": issue.get("store_date"),
-        "cover": image.get("super_url"),
-        "series_url": volume.get("site_detail_url"),
-    }
+def _publisher_key(series_id: int) -> str:
+    return f"comics:publisher-of:v1:{series_id}"
 
 
-async def _issues(
-    http: httpx.AsyncClient, filter: str, sort: str = "id:asc"
-) -> list[dict[str, Any]]:
-    """The issues `filter` names, each with its volume, which is where the publisher is. Two
-    calls for up to a hundred of each."""
-    issues = await _paged(
-        http,
-        "/issues/",
-        filter=filter,
-        field_list="id,issue_number,image,site_detail_url,volume,store_date",
-        sort=sort,
-    )
-    ids = sorted({str(i["volume"]["id"]) for i in issues})
-    volumes: dict[int, dict[str, Any]] = {}
-    for start in range(0, len(ids), PAGE):
-        for volume in await _paged(
-            http,
-            "/volumes/",
-            filter=f"id:{'|'.join(ids[start : start + PAGE])}",
-            field_list="id,name,publisher,site_detail_url",
-        ):
-            volumes[volume["id"]] = volume
-    return [
-        _comic(issue, volumes[issue["volume"]["id"]])
-        for issue in issues
-        if issue["volume"]["id"] in volumes
-    ]
+def _keep_publisher(series_id: int | None, publisher: dict[str, Any] | None) -> None:
+    if series_id and publisher and publisher.get("id"):
+        db.cache_put(
+            _publisher_key(series_id),
+            {"id": publisher["id"], "name": publisher.get("name") or ""},
+            PUBLISHER_OF_SECONDS,
+        )
 
 
-def _days(week: date) -> str:
-    return f"store_date:{week.isoformat()}|{(week + timedelta(days=6)).isoformat()}"
-
-
-async def _firsts(http: httpx.AsyncClient, week: date) -> dict[str, list[dict[str, Any]]]:
-    """The week's #1s by publisher id, of every publisher, those in `PUBLISHERS` always there
-    and first."""
-    found: dict[str, list[dict[str, Any]]] = {publisher: [] for publisher in PUBLISHERS}
-    for comic in await _issues(http, f"{_days(week)},issue_number:1"):
-        found.setdefault(str(comic["publisher_id"]), []).append(comic)
+def publisher_of(series_id: int) -> dict[str, Any] | None:
+    """A series' publisher, `{"id", "name"}`, as kept. None until a detail or the series names
+    it."""
+    found: dict[str, Any] | None = db.cache_get(_publisher_key(series_id))
     return found
 
 
-def _names(credits: Any) -> list[str]:
-    """The names in a list of credits. Comic Vine leaves an empty one null."""
-    return [c["name"] for c in credits] if isinstance(credits, list) else []
+async def read_publishers_behind(series_ids: set[int]) -> None:
+    """`read_publishers` for a page that answered without them, giving way as the loop does."""
+    db.STALE.set(None)
+    await read_publishers(series_ids)
+
+
+async def read_publishers(series_ids: set[int]) -> None:
+    """Read the publisher of each series not kept yet, from the series itself."""
+    for series_id in sorted(series_ids):
+        if publisher_of(series_id) is None:
+            try:
+                await favourite("series", series_id)
+            except (httpx.HTTPError, ValueError) as exc:
+                log.warning("comics: series %s failed: %s", series_id, exc)
+
+
+def with_publishers(comics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each issue with its series' publisher, as far as one is kept."""
+    for comic in comics:
+        if not comic.get("publisher_id"):
+            publisher = publisher_of(comic["series_id"]) or {}
+            comic["publisher"] = publisher.get("name") or ""
+            comic["publisher_id"] = publisher.get("id")
+    return comics
+
+
+def _comic(issue: dict[str, Any]) -> dict[str, Any]:
+    """An issue as every list carries it, with the series and publisher ids it is made by. A
+    list names no publisher, which `with_publishers` adds."""
+    series = issue.get("series") or {}
+    return {
+        "id": str(issue["id"]),
+        "title": f"{series.get('name')} #{issue['number']}",
+        "number": issue["number"],
+        "url": f"{SITE}/issue/{issue['id']}/",
+        "publisher": "",
+        "publisher_id": None,
+        "series_id": series.get("id"),
+        "date": issue.get("store_date"),
+        "cover": issue.get("image"),
+        "series_url": f"{SITE}/series/{series['id']}/" if series.get("id") else None,
+    }
+
+
+def _days(week: date) -> dict[str, str]:
+    return {
+        "store_date_range_after": week.isoformat(),
+        "store_date_range_before": (week + timedelta(days=6)).isoformat(),
+    }
+
+
+async def _issues(http: httpx.AsyncClient, **params: str | int) -> list[dict[str, Any]]:
+    return [_comic(i) for i in await _paged(http, "/issue/", **params)]
+
+
+def _names(rows: Any) -> list[str]:
+    return [r["name"] for r in rows] if isinstance(rows, list) else []
 
 
 def parse_detail(issue: dict[str, Any] | None) -> dict[str, Any] | None:
-    """What an issue says beyond the listing. None when Comic Vine has no such issue."""
+    """What an issue says beyond the listing. None when Metron has no such issue."""
     if not issue:
         return None
-    # One person in two jobs is one entry under each, "penciler, inker".
+    # One person in two jobs is one entry under each.
     creators: dict[str, list[str]] = {}
     people: dict[str, list[dict[str, Any]]] = {}
-    for person in issue.get("person_credits") or []:
-        for role in (person.get("role") or "").split(","):
-            role = _ROLES.get(role.strip(), role.strip().title())
-            if role and person["name"] not in creators.setdefault(role, []):
-                creators[role].append(person["name"])
-                people.setdefault(role, []).append({"id": person["id"], "name": person["name"]})
-    volume = issue.get("volume") or {}
-    image = issue.get("image") or {}
+    for credit in issue.get("credits") or []:
+        for role in credit.get("role") or []:
+            named = _ROLES.get(role["name"], role["name"])
+            if credit["creator"] not in creators.setdefault(named, []):
+                creators[named].append(credit["creator"])
+                people.setdefault(named, []).append({"id": credit["id"], "name": credit["creator"]})
+    series = issue.get("series") or {}
+    stories = [n for n in issue.get("name") or [] if n]
     return {
-        "name": issue.get("name"),
+        "name": issue.get("title") or (stories[0] if len(stories) == 1 else None),
         "creators": creators,
         # The same by role with the ids each opens as a favourite by.
         "people": people,
-        "person_ids": sorted({p["id"] for p in issue.get("person_credits") or []}),
-        "volume_id": volume.get("id"),
-        "series": volume.get("name"),
-        "number": issue.get("issue_number"),
+        "person_ids": sorted({c["id"] for c in issue.get("credits") or []}),
+        "series_id": series.get("id"),
+        "series": series.get("name"),
+        "publisher": issue.get("publisher"),
+        "number": issue.get("number"),
         "date": issue.get("store_date"),
-        "cover": image.get("super_url"),
-        "url": issue.get("site_detail_url"),
-        "synopsis": _text(issue.get("description") or issue.get("deck") or ""),
+        "cover": issue.get("image"),
+        "url": f"{SITE}/issue/{issue['id']}/",
+        "synopsis": _text(issue.get("desc") or ""),
         "cover_date": issue.get("cover_date"),
-        "story_arcs": _names(issue.get("story_arc_credits")),
-        "characters": _names(issue.get("character_credits")),
-        "teams": _names(issue.get("team_credits")),
-        "first_appearances": _names(issue.get("first_appearance_characters")),
-        "variants": len(issue.get("associated_images") or []),
+        "story_arcs": _names(issue.get("arcs")),
+        "characters": _names(issue.get("characters")),
+        "teams": _names(issue.get("teams")),
+        # Metron names no first appearance on an issue.
+        "first_appearances": [],
+        "variants": len(issue.get("variants") or []),
     }
 
 
 def _detail_key(comic_id: str) -> str:
-    return f"comics:detail:v4:{comic_id}"
+    return f"comics:detail:v5:{comic_id}"
 
 
 def cached_detail(comic_id: str) -> dict[str, Any] | None:
@@ -309,45 +349,45 @@ def cached_detail(comic_id: str) -> dict[str, Any] | None:
     return found
 
 
+async def read_issue(comic_id: str) -> dict[str, Any] | None:
+    """One issue as Metron answers it, its series' publisher kept on the way."""
+    async with client() as http:
+        raw = await _get(http, f"/issue/{comic_id}/")
+    if raw:
+        _keep_publisher((raw.get("series") or {}).get("id"), raw.get("publisher"))
+    return raw
+
+
 async def detail(comic_id: str, ttl: int) -> dict[str, Any] | None:
-    """The issue, kept `ttl` seconds. One Comic Vine does not have is kept as nothing, so it is
+    """The issue, kept `ttl` seconds. One Metron does not have is kept as nothing, so it is
     not asked for again every hour."""
 
     async def read() -> dict[str, Any] | None:
-        # Its own client, since a refresh outlives the request that started it.
-        async with client() as http:
-            body = await _get(
-                http,
-                f"/issue/4000-{comic_id}/",
-                field_list="name,description,deck,cover_date,person_credits,story_arc_credits,"
-                "character_credits,team_credits,first_appearance_characters,associated_images,"
-                "volume,issue_number,store_date,image,site_detail_url",
-            )
-        return parse_detail(body["results"])
+        return parse_detail(await read_issue(comic_id))
 
     found: dict[str, Any] | None = await db.remember(_detail_key(comic_id), ttl, read)
     return found
 
 
 async def prefetch_week() -> int:
-    """Read every issue of the current week not read before. Returns how many were read.
+    """Read every issue of the current week not read before, and every series' publisher the
+    week's #1s and issues lack. Returns how many issues were read.
 
     Runs on the hourly loop, so the week is in the cache before anyone opens it, with the
-    credits that star a favourite writer or artist on every card. Once it is, a pass asks
-    Comic Vine nothing until the next week starts.
+    credits that star a favourite writer or artist and the publisher of every card. Once it
+    is, a pass asks Metron nothing more until the next week starts.
     """
     if not db.get_settings().comics_ready:
         return 0
     now = datetime.now(UTC)
     week = week_of(now.date())
     read = 0
-    firsts = [c for comics in (await week_listing(week)).values() for c in comics]
     try:
         every = await week_issues(week)
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         log.warning("comics: listing every issue of %s failed: %s", week, exc)
         every = []
-    for comic in {c["id"]: c for c in [*firsts, *every]}.values():
+    for comic in every:
         if db.cache_lookup(_detail_key(comic["id"]))[0]:
             continue
         try:
@@ -356,43 +396,49 @@ async def prefetch_week() -> int:
             log.warning("comics: %s failed: %s", comic["title"], exc)
             continue
         read += 1
+    await read_publishers({c["series_id"] for c in every if c["series_id"]})
     return read
 
 
 async def week_listing(week: date) -> dict[str, list[dict[str, Any]]]:
-    """The week's new #1s by publisher id, empty when Comic Vine failed to answer and nothing
-    was kept.
+    """The week's new #1s by publisher id, those in `PUBLISHERS` first, empty when Metron
+    failed to answer and nothing was kept. Each series' publisher is read when it is not kept,
+    so this waits on Metron, as the hourly loop can.
 
     A failure is not kept, so the next pass asks again.
     """
 
-    async def read() -> dict[str, list[dict[str, Any]]]:
+    async def read() -> list[dict[str, Any]]:
         # Its own client, since a refresh outlives the request that started it.
         async with client() as http:
-            return await _firsts(http, week)
+            return await _issues(http, number="1", **_days(week))
 
-    key = f"comics:week:v5:{week.isoformat()}"
     try:
-        found: dict[str, list[dict[str, Any]]] = await db.remember(
-            key, lambda listed: listing_ttl(week, listed), read
+        listed: list[dict[str, Any]] = await db.remember(
+            f"comics:firsts:v1:{week.isoformat()}", lambda found: listing_ttl(week, found), read
         )
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         log.warning("comics: listing %s failed: %s", week, exc)
         return {}
+    await read_publishers({c["series_id"] for c in listed if c["series_id"]})
+    found: dict[str, list[dict[str, Any]]] = {publisher: [] for publisher in PUBLISHERS}
+    for comic in with_publishers([dict(c) for c in listed]):
+        found.setdefault(str(comic["publisher_id"]), []).append(comic)
     return found
 
 
 async def week_issues(week: date) -> list[dict[str, Any]]:
-    """Every issue of the week, of every publisher, kept as the week's #1s are."""
+    """Every issue of the week, of every publisher, kept as the week's #1s are. Each carries
+    its publisher only as far as one is kept, the rest read on the hourly pass."""
 
     async def read() -> list[dict[str, Any]]:
         async with client() as http:
-            return await _issues(http, _days(week))
+            return await _issues(http, **_days(week))
 
     found: list[dict[str, Any]] = await db.remember(
-        f"comics:issues:v2:{week.isoformat()}", lambda listed: listing_ttl(week, listed), read
+        f"comics:issues:v3:{week.isoformat()}", lambda listed: listing_ttl(week, listed), read
     )
-    return found
+    return with_publishers([dict(c) for c in found])
 
 
 def weeks_ahead(today: date, slots: list[tuple[int, int]]) -> list[date]:
@@ -406,14 +452,15 @@ async def notify_new_firsts(now: datetime | None = None) -> int:
     for its Wednesday. Returns how many digests were sent.
 
     Runs on the hourly loop. Each #1 is in one digest only, so a later notice of the schedule
-    sends again only for #1s Comic Vine added since. An issue of the current week is still
+    sends again only for #1s Metron added since. An issue of the current week is still
     announced after its Wednesday, until the week ends. Issues are marked only once the digest
-    went out, so a failure is retried on the next pass.
+    went out, so a failure is retried on the next pass. Nothing is sent while the carry-over
+    from Comic Vine is still to run.
     """
     settings = db.get_settings()
     channel = settings.notices("comics")
     window = notices.window(settings, "comics", now)
-    if channel is None or window is None:
+    if channel is None or window is None or db.comicvine_pending():
         return 0
 
     sent = 0
@@ -462,122 +509,107 @@ async def _announce_week(
 # ---------------------------------------------------------------- favourites
 
 
-def _image(raw: dict[str, Any]) -> str | None:
-    """A person's photo or a series' cover. Comic Vine stands a blank image in for none."""
-    url = (raw.get("image") or {}).get("super_url")
-    return None if not url or "blank" in url.rsplit("/", 1)[-1] else url
-
-
 def _entity(kind: str, raw: dict[str, Any]) -> dict[str, Any]:
-    """A series, person or publisher as a favourite is shown. A publisher is a name, never a
-    logo, as every organisation is."""
+    """A series, creator or publisher as a favourite is shown. A publisher is a name, never a
+    logo, as every organisation is, and a series has no image of its own."""
     publisher = raw.get("publisher") or {}
     if kind == "series":
-        count = raw.get("count_of_issues")
+        _keep_publisher(raw["id"], publisher)
+        count = raw.get("issue_count")
         meta = " · ".join(
             str(part)
             for part in (
                 publisher.get("name"),
-                raw.get("start_year"),
-                f"{count} issues" if count else None,
+                raw.get("year_began"),
+                f"{count} issue{'' if count == 1 else 's'}" if count else None,
             )
             if part
         )
     else:
         meta = "Creator" if kind == "person" else "Publisher"
+    # A series is named with its first year in a list, "Batman (2016)", and without in detail.
+    name = raw.get("name") or raw.get("series") or ""
+    if kind == "series" and raw.get("year_began") and not name.endswith(")"):
+        name = f"{name} ({raw['year_began']})"
     return {
         "category": "comics",
         "kind": kind,
         "id": raw["id"],
-        "name": raw["name"],
-        "image": None if kind == "publisher" else _image(raw),
+        "name": name,
+        "image": raw.get("image") if kind == "person" else None,
         "meta": meta or "Series",
-        "url": raw.get("site_detail_url"),
+        "url": f"{SITE}{_PATHS[kind]}{raw['id']}/",
         "ids": [raw["id"]],
         "publisher": publisher.get("name") or "",
         "publisher_id": publisher.get("id"),
     }
 
 
-async def search_favourites(query: str) -> list[dict[str, Any]]:
-    """Series, people and publishers matching `query`, as Comic Vine ranks them.
-
-    People and publishers are also read from their own lists by name, since a name like Marvel
-    fills every result of the search with series named after it, and the search ranks the
-    publisher nowhere.
-    """
-    # Comic Vine's filter syntax splits on these.
-    name = re.sub(r"[,:|]", " ", query).strip()
+async def search_favourites(query: str, kind: str | None = None) -> list[dict[str, Any]]:
+    """Series, creators and publishers whose name holds `query`, one call each, or only those
+    of `kind`."""
+    kinds = [kind] if kind in _PATHS else list(_PATHS)
 
     async def read() -> list[dict[str, Any]]:
-        found: dict[tuple[str, int], dict[str, Any]] = {}
-
-        def keep(kind: str, rows: list[dict[str, Any]] | None) -> None:
-            for row in rows or []:
-                found.setdefault((kind, int(row["id"])), _entity(kind, row))
-
+        found: list[dict[str, Any]] = []
         async with client() as http:
-            body = await _get(
-                http,
-                "/search/",
-                query=query,
-                resources=",".join(RESOURCES),
-                field_list=f"{_ENTITY_FIELDS},resource_type",
-                limit=30,
-            )
-            for r in body["results"] or []:
-                if r.get("resource_type") in RESOURCES:
-                    keep(RESOURCES[r["resource_type"]], [r])
-            for path, kind in (("/publishers/", "publisher"), ("/people/", "person")):
-                listed = await _get(
-                    http, path, filter=f"name:{name}", field_list=_ENTITY_FIELDS, limit=12
-                )
-                keep(kind, listed["results"])
-        return list(found.values())
+            for each in kinds:
+                body = await _get(http, _PATHS[each], name=query, page_size=20) or {}
+                found += [_entity(each, row) for row in body.get("results") or []]
+        return found
 
     found: list[dict[str, Any]] = await db.remember(
-        f"comics:search:v3:{query.casefold()}", SEARCH_TTL, read
+        f"comics:search:v4:{','.join(kinds)}:{query.casefold()}", SEARCH_TTL, read
     )
     return found
 
 
 async def favourite(kind: str, source_id: int) -> dict[str, Any] | None:
-    """One series, person or publisher, None when Comic Vine has no such one."""
+    """One series, creator or publisher, None when Metron has no such one."""
 
     async def read() -> dict[str, Any] | None:
         async with client() as http:
-            body = await _get(http, _ENTITY_PATH[kind].format(source_id), field_list=_ENTITY_FIELDS)
-        return _entity(kind, body["results"]) if body["results"] else None
+            raw = await _get(http, f"{_PATHS[kind]}{source_id}/")
+        return _entity(kind, raw) if raw else None
 
     found: dict[str, Any] | None = await db.remember(
-        f"comics:entity:v1:{kind}:{source_id}", ENTITY_TTL, read
+        f"comics:entity:v2:{kind}:{source_id}", ENTITY_TTL, read
     )
     return found
 
 
 async def favourite_releases(kind: str, ids: list[int]) -> list[dict[str, Any]]:
-    """What a favourite has coming. A series' issues from the first of the month on, one call
-    each. A publisher's or a person's are of the current week only, the one Comic Vine dates,
-    a person's read from the credits the hourly pass keeps."""
-    if kind == "series":
-        start = db.month_start()
-        days = f"store_date:{start.isoformat()}|{(start + timedelta(days=400)).isoformat()}"
-        found: list[dict[str, Any]] = []
-        async with client() as http:
-            for source_id in ids:
-                found += await _issues(http, f"volume:{source_id},{days}", "store_date:asc")
-        return found
-    week = await week_issues(week_of(datetime.now(UTC).date()))
-    if kind == "publisher":
-        return [c for c in week if c["publisher_id"] in ids]
-    return [c for c in week if not set(made(c)["person"]).isdisjoint(ids)]
+    """What a favourite has coming from the first of the month on, one call each: a series' and
+    a creator's issues, a publisher's up to `PUBLISHER_REACH` ahead."""
+    start = db.month_start()
+    after = {"store_date_range_after": start.isoformat()}
+    found: list[dict[str, Any]] = []
+    async with client() as http:
+        for source_id in ids:
+            if kind == "series":
+                found += await _issues(http, series_id=source_id, **after)
+            elif kind == "person":
+                found += await _issues(http, creator_id=source_id, **after)
+            else:
+                before = (start + PUBLISHER_REACH).isoformat()
+                listed = await _issues(
+                    http, publisher_id=source_id, store_date_range_before=before, **after
+                )
+                # Its publisher is the favourite itself, so no series is asked for it.
+                named = await favourite("publisher", source_id) or {}
+                for comic in listed:
+                    comic["publisher"] = named.get("name") or ""
+                    comic["publisher_id"] = source_id
+                found += listed
+    await read_publishers({c["series_id"] for c in found if not c["publisher_id"]})
+    return sorted(with_publishers(found), key=lambda c: (c["date"] or "", c["title"]))
 
 
 def made(comic: dict[str, Any]) -> dict[str, list[int]]:
     """Who and what made an issue, by kind of favourite. Its people once its details are read."""
     detail = comic.get("detail") or cached_detail(comic["id"]) or {}
     return {
-        "series": [comic["volume_id"]] if comic.get("volume_id") else [],
+        "series": [comic["series_id"]] if comic.get("series_id") else [],
         "publisher": [comic["publisher_id"]] if comic.get("publisher_id") else [],
         "person": list(detail.get("person_ids") or []),
     }
@@ -595,22 +627,22 @@ def star(comics: list[dict[str, Any]], favourites: list[dict[str, Any]]) -> list
 
 
 async def issue(comic_id: str) -> dict[str, Any] | None:
-    """One issue as every list carries it, read from its details and its series, for a dialog
-    opened away from any list."""
+    """One issue as every list carries it, read from its details, for a dialog opened away from
+    any list."""
     found = await detail(comic_id, ON_DEMAND_TTL)
-    if not found or not found.get("volume_id"):
+    if not found or not found.get("series_id"):
         return None
-    series = await favourite("series", int(found["volume_id"]))
+    publisher = found.get("publisher") or publisher_of(int(found["series_id"])) or {}
     return {
         "id": comic_id,
         "title": f"{found['series']} #{found['number']}",
         "url": found["url"],
-        "publisher": (series or {}).get("publisher") or "",
-        "publisher_id": (series or {}).get("publisher_id"),
-        "volume_id": found["volume_id"],
+        "publisher": publisher.get("name") or "",
+        "publisher_id": publisher.get("id"),
+        "series_id": found["series_id"],
         "number": found["number"],
         "date": found["date"],
         "cover": found["cover"],
-        "series_url": (series or {}).get("url"),
+        "series_url": f"{SITE}/series/{found['series_id']}/",
         "detail": found,
     }

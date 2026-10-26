@@ -253,7 +253,7 @@ export function asComic(entry: MonitoredComic): Comic {
     url: entry.url,
     publisher: entry.publisher,
     publisher_id: null,
-    volume_id: entry.volume_id,
+    series_id: entry.series_id,
     number: null,
     date: null,
     cover: entry.cover,
@@ -292,7 +292,7 @@ export function seriesItem(series: Series, to: string): Item {
     shape: 'cover',
     library: null,
     title: series.title,
-    // A series whose source has its first issue alone, as a Comic Vine #1 is tagged.
+    // A series whose source has its first issue alone, as a Metron #1 is tagged.
     tag: series.issues === 1 ? '#1' : null,
     status: series.inLibrary ? { state: 'found', detail: ['In the Suwayomi library'] } : null,
     settled: series.inLibrary,
@@ -375,17 +375,19 @@ export function monitoredComicItem(entry: MonitoredComic, to: string): Item {
   }
 }
 
-/**
- * The cover at the size a card draws, rather than the full size the listing names. Series
- * monitored before Comic Vine keep LOCG's.
- */
+/** LOCG's cover at the size a card draws, for a series monitored from LOCG. Metron has one size. */
 export function comicCover(cover: string | null): string | null {
-  return cover?.replace('/scale_large/', '/scale_medium/').replace('/large-', '/medium-') ?? null
+  return cover?.replace('/large-', '/medium-') ?? null
 }
 
-/** Whether a #1 came from Comic Vine, which an issue id from LOCG must never be asked of. */
-export function fromComicVine(comic: { url: string }): boolean {
-  return comic.url.startsWith('https://comicvine.gamespot.com/')
+/** Whether a comic is on Metron, where it opens, and not monitored from LOCG. */
+export function fromMetron(comic: { url: string }): boolean {
+  return comic.url.startsWith('https://metron.cloud/')
+}
+
+/** Whether a comic is an issue Metron has, whose details can be read, and not only its series. */
+export function metronIssue(comic: { url: string }): boolean {
+  return comic.url.startsWith('https://metron.cloud/issue/')
 }
 
 /** "30 Oct 2026" from a YYYY-MM-DD, read as a calendar day rather than a UTC instant. */
@@ -701,12 +703,12 @@ export function favouriteItem(favourite: Favourite, to: string): Item {
 /** The monitored series an issue is of, by its series, or by the issue for a row from LOCG. */
 export function comicMonitorOf(
   rows: MonitoredComic[] | undefined,
-  comic: Pick<Comic, 'id' | 'volume_id'>,
+  comic: Pick<Comic, 'id' | 'series_id'>,
 ): MonitoredComic | null {
   return (
     rows?.find(
       (m) =>
-        m.issue_id === comic.id || (comic.volume_id !== null && m.volume_id === comic.volume_id),
+        m.issue_id === comic.id || (comic.series_id !== null && m.series_id === comic.series_id),
     ) ?? null
   )
 }

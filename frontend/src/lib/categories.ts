@@ -35,7 +35,7 @@ export const CATEGORIES: CategoryInfo[] = [
     to: '/comics',
     settings: '/settings/comics',
     ready: (s) => s.comics_ready,
-    off: 'Comics needs a Comic Vine API key. Add it in {settings-comics}.',
+    off: 'Comics needs a Metron API key. Add it in {settings-comics}.',
   },
   {
     key: 'screens',

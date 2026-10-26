@@ -134,9 +134,9 @@ function GameResults({ term, view }: ResultsProps) {
   )
 }
 
-/** Comic series on Comic Vine. Each opens as a favourite, with the issues it has coming. */
+/** Comic series on Metron. Each opens as a favourite, with the issues it has coming. */
 function ComicResults({ term, view }: ResultsProps) {
-  const found = useFavouriteSearch('comics', term)
+  const found = useFavouriteSearch('comics', term, 'series')
   const series = (found.data ?? []).filter((e) => e.kind === 'series')
   return (
     <CategoryGroup
@@ -144,7 +144,7 @@ function ComicResults({ term, view }: ResultsProps) {
       shape="cover"
       count={series.length}
       pending={found.isPending}
-      error={failed(found, 'Comic Vine')}
+      error={failed(found, 'Metron')}
     >
       <FavouriteSections category="comics" entities={series} view={view} title="Series" />
     </CategoryGroup>
@@ -231,7 +231,7 @@ function BookResults({ term, view }: ResultsProps) {
 /** One kind of what a category's titles come from, people or studios or authors. */
 function KindResults({ term, view, scope }: ResultsProps) {
   const category = scope.category as FavouriteCategory
-  const found = useFavouriteSearch(category, term)
+  const found = useFavouriteSearch(category, term, scope.kind)
   const entities = (found.data ?? []).filter(
     (e) => e.kind === scope.kind && (!scope.role || e.roles?.includes(scope.role)),
   )

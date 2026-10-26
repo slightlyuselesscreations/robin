@@ -77,8 +77,8 @@ CREATE TABLE IF NOT EXISTS settings (
     -- The robin Robin is coloured as, and whether it is dark, light or follows the system.
     theme                    TEXT NOT NULL DEFAULT 'european',
     scheme                   TEXT NOT NULL DEFAULT 'dark',
-    -- Comics, from Comic Vine.
-    comicvine_token          TEXT NOT NULL DEFAULT '',
+    -- Comics, from Metron.
+    metron_token             TEXT NOT NULL DEFAULT '',
     suwayomi_url             TEXT NOT NULL DEFAULT '',
     suwayomi_source_id       TEXT NOT NULL DEFAULT '',
     qbittorrent_url          TEXT NOT NULL DEFAULT '',
@@ -159,8 +159,8 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS comics (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     issue_id    TEXT    NOT NULL UNIQUE,
-    -- Its series on Comic Vine, null for one monitored from LOCG. One row per series.
-    volume_id   INTEGER,
+    -- Its series on Metron, null for one monitored from LOCG. One row per series.
+    series_id   INTEGER,
     title       TEXT    NOT NULL,
     series      TEXT    NOT NULL,
     year        INTEGER NOT NULL,
@@ -229,7 +229,7 @@ CREATE TABLE IF NOT EXISTS book_reminders (
 );
 
 -- What a release can come from, starred: a game company, franchise or series on IGDB, a series,
--- person or publisher on Comic Vine, a person, studio or network on TMDB, an author or series on
+-- person or publisher on Metron, a person, studio or network on TMDB, an author or series on
 -- Hardcover. `source_id` is the id the source
 -- gives it. A changed kind CHECK is applied by `db._rebuild`.
 CREATE TABLE IF NOT EXISTS favourites (

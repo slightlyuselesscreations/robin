@@ -93,6 +93,8 @@ def init_db() -> None:
         # Readers no longer wait on a writer, so a page never waits on the hourly loop.
         c.execute("PRAGMA journal_mode = WAL")
         c.executescript(schema)
+        # Before the columns change: what Comic Vine named, moved aside for the carry-over.
+        _comicvine_aside(c)
         # Comics gained favourites, and with them the publisher.
         for table in ("favourites", "maker_filters"):
             _rebuild(c, schema, table, "'publisher'")
@@ -103,7 +105,9 @@ def init_db() -> None:
         _ntfy_to_destinations(c)
         _unify_page_defaults(c)
         # After the column is added, which an older database has not had.
-        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS comics_volume ON comics (volume_id)")
+        c.execute("DROP INDEX IF EXISTS comics_volume")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS comics_series ON comics (series_id)")
+        _drop_columns(c, "settings", ("comicvine_token",))
         # Makers were only ever hidden before they could be shown too.
         if c.execute("SELECT 1 FROM sqlite_master WHERE name = 'hidden_makers'").fetchone():
             c.execute(
@@ -115,6 +119,97 @@ def init_db() -> None:
             c.execute("DROP TABLE hidden_makers")
         c.execute("INSERT OR IGNORE INTO settings (id, updated_at) VALUES (1, ?)", (now(),))
         c.execute("INSERT OR IGNORE INTO account (id, updated_at) VALUES (1, ?)", (now(),))
+
+
+# ---------------------------------------------------------------- Comic Vine carry-over
+# Comics read Comic Vine before Metron. On the first start of a Robin that reads Metron, every
+# Comic Vine id Robin holds is moved aside here, out of where Metron ids live, and
+# `robin/carry.py` puts back the Metron id of each, once a Metron key is set. Nothing matches by
+# a Comic Vine id after it. This and `robin/carry.py` go once every install has had that start.
+
+COMICVINE_CARRY = "comicvine_carry"
+
+# The marks of what was announced from Comic Vine carried over: from this month on, or for a
+# digest, which marks no date, written in the last two weeks.
+CARRY_SEEN_DAYS = 14
+
+
+def _comicvine_aside(c: sqlite3.Connection) -> None:
+    """Move every Comic Vine id aside into `COMICVINE_CARRY`, each with what it belonged to,
+    and drop what was only kept from Comic Vine. Runs while the settings still have the Comic
+    Vine key's column, so once."""
+    if "comicvine_token" not in _columns(c, "settings"):
+        return
+    c.execute(
+        f"CREATE TABLE IF NOT EXISTS {COMICVINE_CARRY} (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " what TEXT NOT NULL, row_id INTEGER, cv_id INTEGER NOT NULL, data_json TEXT)"
+    )
+
+    def aside(what: str, row_id: int | None, cv_id: Any, data: Any = None) -> None:
+        if str(cv_id).isdigit():
+            c.execute(
+                f"INSERT INTO {COMICVINE_CARRY} (what, row_id, cv_id, data_json)"
+                " VALUES (?, ?, ?, ?)",
+                (what, row_id, int(cv_id), json.dumps(data)),
+            )
+
+    for table in ("favourites", "maker_filters"):
+        for row in c.execute(f"SELECT id, source_id FROM {table} WHERE category = 'comics'"):
+            aside(table, row["id"], row["source_id"])
+    settings = c.execute("SELECT * FROM settings WHERE id = 1").fetchone()
+    if settings is not None and "comics_digest_publishers_json" in settings.keys():  # noqa: SIM118, a Row tests values
+        for publisher in json.loads(settings["comics_digest_publishers_json"] or "[]"):
+            aside("digest", None, publisher.get("id"), publisher)
+        c.execute("UPDATE settings SET comics_digest_publishers_json = '[]' WHERE id = 1")
+    if "volume_id" in _columns(c, "comics"):
+        for row in c.execute("SELECT id, volume_id, issue_id FROM comics WHERE volume_id"):
+            aside("series", row["id"], row["volume_id"])
+            aside("issue", row["id"], row["issue_id"])
+        c.execute("UPDATE comics SET volume_id = NULL")
+        c.execute("DROP INDEX IF EXISTS comics_volume")
+        c.execute("ALTER TABLE comics RENAME COLUMN volume_id TO series_id")
+    for row in c.execute(
+        "SELECT title FROM favourite_monitored WHERE category = 'comics' AND title LIKE 'volume-%'"
+    ):
+        aside("monitored", None, row["title"].removeprefix("volume-"))
+    c.execute("DELETE FROM favourite_monitored WHERE category = 'comics'")
+    start = month_start().isoformat()
+    for row in c.execute("SELECT * FROM favourite_notices WHERE category = 'comics'"):
+        if (row["notified_for"] or "")[:10] >= start:
+            aside("notice", None, row["title"], {"notified_for": row["notified_for"]})
+    c.execute("DELETE FROM favourite_notices WHERE category = 'comics'")
+    for row in c.execute("SELECT id, target FROM countdowns WHERE target LIKE 'comic=%'"):
+        aside("countdown", row["id"], row["target"].removeprefix("comic="))
+    recent = (datetime.now(UTC) + timedelta(days=90 - CARRY_SEEN_DAYS)).isoformat()
+    for row in c.execute(
+        "SELECT key, value_json, expires_at FROM cache WHERE key GLOB 'comics:seen:[0-9]*'"
+    ):
+        marker = str(json.loads(row["value_json"]))
+        if marker[:10] >= start or (marker.startswith("*") and row["expires_at"] >= recent):
+            aside("seen", None, row["key"].removeprefix("comics:seen:"), marker)
+    for row in c.execute("SELECT key, value_json FROM cache WHERE key GLOB 'comics:dated:[0-9]*'"):
+        dated = str(json.loads(row["value_json"]))
+        if dated[:10] >= start:
+            aside("dated", None, row["key"].removeprefix("comics:dated:"), dated)
+    # Everything else kept from Comic Vine goes now, its answers and its pause.
+    for pattern in (
+        "comics:*",
+        "favourite:coming:*:comics:*",
+        "limit:v1:comicvine",
+        "health:*",
+    ):
+        c.execute("DELETE FROM cache WHERE key GLOB ?", (pattern,))
+    log.info("moved Comic Vine ids aside for the carry-over to Metron")
+
+
+def comicvine_pending() -> bool:
+    """Whether the carry-over from Comic Vine has ids still to put back."""
+    with conn() as c:
+        if not c.execute(
+            "SELECT 1 FROM sqlite_master WHERE name = ?", (COMICVINE_CARRY,)
+        ).fetchone():
+            return False
+        return c.execute(f"SELECT 1 FROM {COMICVINE_CARRY} LIMIT 1").fetchone() is not None
 
 
 def _keep_to_hide(c: sqlite3.Connection) -> None:
@@ -351,7 +446,7 @@ SECRET_FIELDS = (
     "qbittorrent_api_key",
     "tmdb_token",
     "hardcover_token",
-    "comicvine_token",
+    "metron_token",
     "radarr_api_key",
     "sonarr_api_key",
     "backup_passphrase",
@@ -441,8 +536,8 @@ class Settings:
     page_defaults: dict[str, dict[str, str]]
     theme: Theme
     scheme: Scheme
-    # Comics, from Comic Vine.
-    comicvine_token: str
+    # Comics, from Metron.
+    metron_token: str
     # Where monitored comic series are looked for. Both empty means they are not.
     suwayomi_url: str
     suwayomi_source_id: str
@@ -494,7 +589,7 @@ class Settings:
     comics_schedule: list[dict[str, int]]
     screen_schedule: list[dict[str, int]]
     books_schedule: list[dict[str, int]]
-    # The Comic Vine publishers the weekly #1s digest names, each {"id", "name"}, every one
+    # The Metron publishers the weekly #1s digest names, each {"id", "name"}, every one
     # while empty.
     comics_digest_publishers: list[dict[str, Any]]
     # Quiet hours per category, [start, end], empty for none.
@@ -548,7 +643,7 @@ class Settings:
 
     @property
     def comics_ready(self) -> bool:
-        return bool(self.comicvine_key)
+        return bool(self.metron_key)
 
     @property
     def prowlarr_ready(self) -> bool:
@@ -587,8 +682,8 @@ class Settings:
         return raw[len("bearer ") :].strip() if raw.lower().startswith("bearer ") else raw
 
     @property
-    def comicvine_key(self) -> str:
-        return self.comicvine_token.strip()
+    def metron_key(self) -> str:
+        return self.metron_token.strip()
 
     def source_ready(self, category: Category) -> bool:
         return {
@@ -1475,20 +1570,20 @@ def monitor_comic(
     publisher: str,
     url: str,
     cover: str | None,
-    volume_id: int | None = None,
+    series_id: int | None = None,
 ) -> dict[str, Any]:
     """Monitoring a series already monitored, from this issue or any other, returns the
     existing row."""
     with conn() as c:
-        if volume_id is not None:
-            row = c.execute("SELECT * FROM comics WHERE volume_id = ?", (volume_id,)).fetchone()
+        if series_id is not None:
+            row = c.execute("SELECT * FROM comics WHERE series_id = ?", (series_id,)).fetchone()
             if row is not None:
                 return dict(row)
         c.execute(
-            "INSERT INTO comics (issue_id, volume_id, title, series, year, publisher, url, cover,"
+            "INSERT INTO comics (issue_id, series_id, title, series, year, publisher, url, cover,"
             " status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'monitored', ?)"
             " ON CONFLICT (issue_id) DO NOTHING",
-            (issue_id, volume_id, title, series, year, publisher, url, cover, now()),
+            (issue_id, series_id, title, series, year, publisher, url, cover, now()),
         )
         row = c.execute("SELECT * FROM comics WHERE issue_id = ?", (issue_id,)).fetchone()
     return dict(row)

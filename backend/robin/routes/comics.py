@@ -1,7 +1,8 @@
-"""New #1 comics for one week, by publisher, and the series monitored from them."""
+"""A week of comics from Metron, an issue, Suwayomi, and the series monitored."""
 
+import asyncio
 import logging
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -16,16 +17,35 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["comics"])
 
 
+# Background reads of what a week's issues lack, kept so they are not collected mid-read.
+_reading: set[asyncio.Task[None]] = set()
+
+
 @router.get("/comics/issues")
-async def week_issues() -> dict[str, Any]:
-    """Every issue of the current week, of every publisher. An issue carries its details only
-    when they are already cached."""
-    wednesday = comics.week_of(datetime.now(UTC).date())
+async def week_issues(week: date | None = None) -> dict[str, Any]:
+    """Every issue of a week, of every publisher. `week` is any day of it, defaulting to today,
+    and the answer is keyed by its Wednesday. The earliest is the week the first of this month
+    falls in, an earlier one answers as that, and its `previous` is null.
+
+    An issue carries its details only when they are already cached, and its publisher as far
+    as one is kept. Those it lacks are read behind the answer."""
+    first = comics.first_week()
+    wednesday = max(first, comics.week_of(week or datetime.now(UTC).date()))
     try:
         found = await comics.week_issues(wednesday)
     except (httpx.HTTPError, ValueError, KeyError) as exc:
-        raise HTTPException(status_code=502, detail="Comic Vine is unreachable") from exc
-    return {"week": wednesday.isoformat(), "issues": _listed(found)}
+        raise HTTPException(status_code=502, detail="Metron is unreachable") from exc
+    lacking = {c["series_id"] for c in found if c["series_id"] and not c["publisher_id"]}
+    if lacking:
+        task = asyncio.create_task(comics.read_publishers_behind(lacking))
+        _reading.add(task)
+        task.add_done_callback(_reading.discard)
+    return {
+        "week": wednesday.isoformat(),
+        "previous": (wednesday - timedelta(days=7)).isoformat() if wednesday > first else None,
+        "next": (wednesday + timedelta(days=7)).isoformat(),
+        "issues": _listed(found),
+    }
 
 
 def _listed(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -46,21 +66,21 @@ async def any_issue(comic_id: str = Path(pattern=r"^\d+$")) -> dict[str, Any]:
     try:
         found = await comics.issue(comic_id)
     except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail="Comic Vine is unreachable") from exc
+        raise HTTPException(status_code=502, detail="Metron is unreachable") from exc
     if found is None:
-        raise HTTPException(status_code=404, detail="Comic Vine has no such issue")
+        raise HTTPException(status_code=404, detail="Metron has no such issue")
     return comics.star([found], db.favourites("comics"))[0]
 
 
 @router.get("/comics/issue/{comic_id}")
 async def issue_detail(comic_id: str = Path(pattern=r"^\d+$")) -> dict[str, Any]:
-    """One issue, read from Comic Vine when it is not cached and kept a few hours after."""
+    """One issue, read from Metron when it is not cached and kept a few hours after."""
     try:
         found = await comics.detail(comic_id, comics.ON_DEMAND_TTL)
     except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail="Comic Vine is unreachable") from exc
+        raise HTTPException(status_code=502, detail="Metron is unreachable") from exc
     if found is None:
-        raise HTTPException(status_code=404, detail="Comic Vine has no such issue")
+        raise HTTPException(status_code=404, detail="Metron has no such issue")
     return found
 
 
@@ -72,7 +92,7 @@ class MonitorComic(BaseModel):
     url: str
     publisher: str = ""
     cover: str | None = None
-    volume_id: int | None = None
+    series_id: int | None = None
     week: date
 
 
@@ -102,14 +122,14 @@ async def _series_shown(settings: db.Settings, row: dict[str, Any]) -> bool:
     """Whether a monitored series stays on Monitored, by its series. Its next issue, `next`,
     is read beside it from what the series has coming, kept six hours."""
     row["next"] = None
-    volume_id = row.get("volume_id")
-    if not volume_id:
+    series_id = row.get("series_id")
+    if not series_id:
         return True
-    made = {"series": [volume_id], "publisher": [], "person": []}
+    made = {"series": [series_id], "publisher": [], "person": []}
     if not hidden.comic(settings, made):
         return False
     try:
-        coming = await favourites.coming(settings, "comics", "series", [volume_id])
+        coming = await favourites.coming(settings, "comics", "series", [series_id])
     except upstream.UpstreamError:
         return True
     today = datetime.now(UTC).date().isoformat()
@@ -138,7 +158,7 @@ async def monitor_comic(body: MonitorComic) -> dict[str, Any]:
         "url": body.url,
         "publisher": body.publisher,
         "cover": body.cover,
-        "volume_id": body.volume_id,
+        "series_id": body.series_id,
         "date": body.week.isoformat(),
     }
     return await favourites.monitor_series(db.get_settings(), issue)

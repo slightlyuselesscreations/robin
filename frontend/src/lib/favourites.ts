@@ -66,7 +66,7 @@ export const KINDS: Record<FavouriteCategory, FavouriteKind[]> = {
 /** Its own source, for the link out. */
 export const SOURCE: Record<FavouriteCategory, string> = {
   games: 'IGDB',
-  comics: 'Comic Vine',
+  comics: 'Metron',
   screens: 'TMDB',
   books: 'Hardcover',
 }
@@ -232,11 +232,18 @@ export function useMakerFilter(entity: Pick<Entity, 'category' | 'kind' | 'id'>)
   return { mode: mine?.mode ?? null, loaded: filters.isSuccess, set }
 }
 
-/** What a category's search found that releases come from, beside its titles. */
-export function useFavouriteSearch(category: FavouriteCategory, term: string) {
+/**
+ * What a category's search found that releases come from, beside its titles, or of one `kind`,
+ * which spares a source asked a call per kind.
+ */
+export function useFavouriteSearch(
+  category: FavouriteCategory,
+  term: string,
+  kind: FavouriteKind | null = null,
+) {
   return useQuery({
-    queryKey: ['favourite-search', category, term],
-    queryFn: () => api.searchFavourites(category, term),
+    queryKey: ['favourite-search', category, term, kind],
+    queryFn: () => api.searchFavourites(category, term, false, kind),
     enabled: term.length > 0,
     retry: false,
   })

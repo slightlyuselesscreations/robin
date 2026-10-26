@@ -17,6 +17,7 @@ from robin import (
     auth,
     backups,
     book_reminders,
+    carry,
     comics,
     db,
     favourites,
@@ -139,6 +140,8 @@ async def warm_pages() -> int:
 # What the hourly loop runs, in order. Each returns at once while what it needs is unset.
 CHECKS = (
     purge_expired,
+    # On the first pass, and hourly for a Metron key set after Robin started.
+    carry.run,
     warm_pages,
     # Before the notices, so a release it monitors gets its own and not a favourite's.
     favourites.monitor_favourites,

@@ -47,10 +47,12 @@ async def search(
     category: favourites.Category,
     q: str = Query(min_length=1, max_length=100),
     everything: bool = False,
+    kind: str | None = Query(default=None, max_length=20),
 ) -> list[dict[str, Any]]:
     """What can be favourited in the category: companies, franchises, series, people, studios,
-    networks and authors, each with its kind."""
-    return await favourites.search(db.get_settings(), category, q.strip(), everything)
+    networks and authors, each with its kind. `kind` narrows it to one, where that spares the
+    source a call."""
+    return await favourites.search(db.get_settings(), category, q.strip(), everything, kind)
 
 
 @router.post("")

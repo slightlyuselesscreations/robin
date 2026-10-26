@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
-import { BookOpen, Library, Newspaper } from 'lucide-react'
+import { BookOpen, ChevronLeft, ChevronRight, Library, Newspaper } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 
 import { ComicDialog } from '@/components/ComicDialog'
 import { ComicMenu, SeriesMenu } from '@/components/ItemMenus'
-import { FlightNotice, GridLoading, Items } from '@/components/MediaCard'
+import { GridLoading, Items } from '@/components/MediaCard'
 import {
   Control,
+  ControlGroup,
   FilterSelect,
   Notice,
   Options,
@@ -15,6 +16,7 @@ import {
   Section,
   Sections,
   Segmented,
+  Tip,
   ViewSwitch,
 } from '@/components/Page'
 import { SeriesDialog } from '@/components/SeriesDialog'
@@ -24,11 +26,12 @@ import { HEADER_CONTROLS, ORDERS, asView, narrowed, pickOf, usePageControls } fr
 import { comicItem, comicMonitorOf, seriesItem } from '@/lib/items'
 import { useComic } from '@/lib/monitor'
 import { useDialogParam, withParam } from '@/lib/params'
+import { cn, controlClass, isoDay, monthStart } from '@/lib/utils'
 
-type Source = 'comicvine' | 'suwayomi'
+type Source = 'metron' | 'suwayomi'
 
 const SOURCES: { value: Source; label: string }[] = [
-  { value: 'comicvine', label: 'Comic Vine' },
+  { value: 'metron', label: 'Metron' },
   { value: 'suwayomi', label: 'Suwayomi' },
 ]
 
@@ -43,19 +46,22 @@ const ORDER = [ORDERS.publisher, ORDERS.title]
 
 const byTitle = (a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title)
 
+const WEEK = /^\d{4}-\d{2}-\d{2}$/
+
 /**
- * Every issue of the current week from Comic Vine, the first of a series tagged #1. With
+ * Every issue of a week from Metron, this week first, the first of a series tagged #1. With
  * Suwayomi set, the panel switches to the series its source updated last, the open one
  * `?series=<suwayomi id>`.
  *
- * The source, the type, the order, the publisher and the open issue are search parameters, so
- * back and forward step through what was looked at.
+ * The week, the source, the type, the order, the publisher and the open issue are search
+ * parameters, so back and forward step through what was looked at. Without a week the backend
+ * answers for the current one.
  */
 export function Comics() {
   const [params] = useSearchParams()
   const controls = usePageControls('comics', {
     view: 'cover',
-    source: 'comicvine',
+    source: 'metron',
     type: 'all',
     order: 'publisher',
     publisher: '',
@@ -65,16 +71,17 @@ export function Comics() {
   const firsts = pickOf(values.type, TYPES) === 'first'
   const order = pickOf(values.order, ORDER)
 
+  const raw = params.get('week')
+  const asked = raw && WEEK.test(raw) ? raw : undefined
   const issues = useQuery({
-    queryKey: ['comic-issues'],
-    queryFn: api.comicIssues,
+    queryKey: ['comic-issues', asked ?? 'current'],
+    queryFn: () => api.comicIssues(asked),
     staleTime: 60 * 60_000,
     retry: false,
   })
 
   const suwayomi = useSettings().data?.suwayomi_ready ?? false
-  const source: Source =
-    suwayomi && controls.values.source === 'suwayomi' ? 'suwayomi' : 'comicvine'
+  const source: Source = suwayomi && controls.values.source === 'suwayomi' ? 'suwayomi' : 'metron'
   const latest = useQuery({
     queryKey: ['comic-latest'],
     queryFn: api.latestComics,
@@ -108,6 +115,48 @@ export function Comics() {
   const series = (latest.data ?? []).filter((s) => !firsts || s.issues === 1)
   if (order === 'title') series.sort(byTitle)
   const week = issues.data?.week
+  const go = (to: string | null) => controls.set({ week: to, comic: null })
+  const weekControls = (
+    <ControlGroup>
+      {asked ? (
+        <button type="button" onClick={() => go(null)} className={controlClass()}>
+          This week
+        </button>
+      ) : null}
+      <div className="flex items-center gap-1">
+        <Tip content="Previous week">
+          <button
+            type="button"
+            aria-label="Previous week"
+            onClick={() => issues.data?.previous && go(issues.data.previous)}
+            disabled={!issues.data?.previous}
+            className={cn(controlClass(), 'px-1.5')}
+          >
+            <ChevronLeft className="size-3.5" />
+          </button>
+        </Tip>
+        <input
+          type="date"
+          aria-label="Week"
+          value={week ?? asked ?? ''}
+          min={isoDay(monthStart())}
+          onChange={(e) => e.target.value && go(e.target.value)}
+          className={cn(controlClass(), 'text-ink outline-none focus-visible:border-ring')}
+        />
+        <Tip content="Next week">
+          <button
+            type="button"
+            aria-label="Next week"
+            onClick={() => issues.data && go(issues.data.next)}
+            disabled={!issues.data}
+            className={cn(controlClass(), 'px-1.5')}
+          >
+            <ChevronRight className="size-3.5" />
+          </button>
+        </Tip>
+      </div>
+    </ControlGroup>
+  )
   const openId = params.get('comic')
   const listed = every.find((c) => c.id === openId)
   // An issue this page does not list, such as one a favourite has coming, is read on its own.
@@ -134,7 +183,7 @@ export function Comics() {
         />
         <Options controls={controls} header={[...HEADER_CONTROLS, 'source']}>
           <ViewSwitch value={view} onChange={(next) => controls.set({ view: next })} />
-          {source === 'comicvine' && publishers.length > 1 ? (
+          {source === 'metron' && publishers.length > 1 ? (
             <Control label="Publisher">
               <FilterSelect
                 value={picked}
@@ -149,7 +198,7 @@ export function Comics() {
 
       <Sections>
         <Section
-          title={source === 'suwayomi' ? 'Suwayomi' : 'Comic Vine'}
+          title={source === 'suwayomi' ? 'Suwayomi' : 'Metron'}
           icon={source === 'suwayomi' ? Library : Newspaper}
           count={
             source === 'suwayomi'
@@ -161,14 +210,17 @@ export function Comics() {
                 : undefined
           }
           action={
-            suwayomi ? (
-              <Segmented
-                label="Source"
-                options={SOURCES}
-                value={source}
-                onChange={(next) => controls.set({ source: next })}
-              />
-            ) : null
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {source === 'metron' ? weekControls : null}
+              {suwayomi ? (
+                <Segmented
+                  label="Source"
+                  options={SOURCES}
+                  value={source}
+                  onChange={(next) => controls.set({ source: next })}
+                />
+              ) : null}
+            </div>
           }
         >
           {source === 'suwayomi' ? (
@@ -188,12 +240,9 @@ export function Comics() {
           ) : issues.isPending ? (
             pending
           ) : issues.isError ? (
-            <Notice tone="bad">{errorText(issues.error, 'Comic Vine is unreachable')}</Notice>
+            <Notice tone="bad">{errorText(issues.error, 'Metron is unreachable')}</Notice>
           ) : every.length === 0 ? (
-            <FlightNotice>
-              Comic Vine is slow on updating the week's comics. Please wait for Robin's #1s
-              notification to know when data is available
-            </FlightNotice>
+            <Notice>No issues this week.</Notice>
           ) : (
             <Items
               view={view}

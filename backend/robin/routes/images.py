@@ -49,7 +49,7 @@ MAX_AGE_SECONDS = 25 * 24 * 3600
 REMOTE_HOSTS = {
     "image.tmdb.org",
     "assets.hardcover.app",
-    "comicvine.gamespot.com",
+    "static.metron.cloud",
     "artworks.thetvdb.com",
 }
 
@@ -131,7 +131,7 @@ async def remote(url: str) -> FileResponse | RedirectResponse:
         _served(path)
     else:
         try:
-            # Comic Vine wants Robin named in the User-Agent, and the others do not mind it.
+            # Robin names itself to every source, as Metron asks.
             resp = await upstream._client().get(
                 url, headers={"User-Agent": comics.USER_AGENT}, timeout=20
             )

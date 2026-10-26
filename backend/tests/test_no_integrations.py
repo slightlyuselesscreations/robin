@@ -1,7 +1,7 @@
 """Robin with every source and integration unset starts, answers and asks nothing outside.
 
 Any request that leaves the process fails the test, so a feature that quietly needs IGDB,
-TMDB, Hardcover, Comic Vine, Prowlarr, qBittorrent, Radarr, Sonarr, Suwayomi or a notification
+TMDB, Hardcover, Metron, Prowlarr, qBittorrent, Radarr, Sonarr, Suwayomi or a notification
 destination shows up here.
 """
 

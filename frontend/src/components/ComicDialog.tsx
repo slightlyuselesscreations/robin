@@ -27,13 +27,20 @@ import {
   errorText,
 } from '@/lib/api'
 import { useSettings } from '@/lib/categories'
-import { asComic, calendarDay, comicMonitorOf, comicTag, fromComicVine } from '@/lib/items'
+import {
+  asComic,
+  calendarDay,
+  comicMonitorOf,
+  comicTag,
+  fromMetron,
+  metronIssue,
+} from '@/lib/items'
 import { useComic, useComicMonitor } from '@/lib/monitor'
 import { useDialogParam } from '@/lib/params'
 
 /**
  * Any issue, `?comic=<issue id>`, away from the Comics page, which opens the issues it lists
- * itself: the one a series was monitored from, or any other read from Comic Vine.
+ * itself: the one a series was monitored from, or any other read from Metron.
  */
 export function AnyComicDialog() {
   const [id, close] = useDialogParam('comic')
@@ -51,13 +58,13 @@ export function AnyComicDialog() {
   )
 }
 
-// The roles worth a line, in this order. Comic Vine also lists editors.
+// The roles worth a line, in this order. Metron also lists editors.
 const ROLES = ['Writer', 'Artist', 'Penciller', 'Inker', 'Colorist', 'Cover Artist', 'Letterer']
 
 /**
  * One #1, laid out like the game dialog. The listing gives the title and the cover at once.
  * The rest comes from the issue, which the current week already has in the cache and any
- * other week reads from Comic Vine the first time the issue is opened. A series monitored
+ * other week reads from Metron the first time the issue is opened. A series monitored
  * from LOCG has nothing more to read.
  */
 export function ComicDialog({
@@ -96,11 +103,11 @@ function Body({
   const suwayomi = settings.data?.suwayomi_url
   const out = week ?? comic.date ?? undefined
 
-  const comicVine = fromComicVine(comic)
+  const readable = metronIssue(comic)
   const detail = useQuery({
     queryKey: ['comic', comic.id],
     queryFn: () => api.comicDetail(comic),
-    enabled: comicVine,
+    enabled: readable,
     initialData: comic.detail ?? undefined,
     // The backend keeps the issue page, so this tab need not ask again either.
     staleTime: Infinity,
@@ -129,7 +136,7 @@ function Body({
             data?.cover_date ? `Cover date ${calendarDay(data.cover_date)}` : null,
           ]}
         >
-          {!comicVine ? null : data ? (
+          {!readable ? null : data ? (
             <Facts>
               {ROLES.map((role) => (
                 <FavouriteFact
@@ -145,8 +152,8 @@ function Body({
                 category="comics"
                 kind="series"
                 refs={
-                  comic.volume_id
-                    ? [{ id: comic.volume_id, name: data.series ?? seriesOf(comic.title) }]
+                  comic.series_id
+                    ? [{ id: comic.series_id, name: data.series ?? seriesOf(comic.title) }]
                     : null
                 }
               />
@@ -155,7 +162,11 @@ function Body({
                 category="comics"
                 kind="publisher"
                 refs={
-                  comic.publisher_id ? [{ id: comic.publisher_id, name: comic.publisher }] : null
+                  comic.publisher_id
+                    ? [{ id: comic.publisher_id, name: comic.publisher }]
+                    : data.publisher
+                      ? [data.publisher]
+                      : null
                 }
               />
               <Fact label="Story arc" value={data.story_arcs} />
@@ -173,7 +184,9 @@ function Body({
           )}
 
           <Links>
-            <OutLink href={comic.url}>{comicVine ? 'Comic Vine' : 'League of Comic Geeks'}</OutLink>
+            <OutLink href={comic.url}>
+              {fromMetron(comic) ? 'Metron' : 'League of Comic Geeks'}
+            </OutLink>
             {comic.series_url ? <OutLink href={comic.series_url}>Series</OutLink> : null}
             {data?.variants ? (
               <span className="text-2xs text-ink-faint">{data.variants} variant covers</span>

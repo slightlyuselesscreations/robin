@@ -102,7 +102,7 @@ async def test_a_series_is_added_as_soon_as_the_source_lists_it(
     await client.put(
         "/api/settings",
         json={
-            "comicvine_token": "cv-key",
+            "metron_token": "metron-key",
             "suwayomi_url": "https://suwayomi.test/",
             "suwayomi_source_id": SOURCE,
             **notify_to(comics="comics"),
@@ -158,7 +158,7 @@ async def test_the_issue_count_is_taken_when_the_series_is_added(
     await client.put(
         "/api/settings",
         json={
-            "comicvine_token": "cv-key",
+            "metron_token": "metron-key",
             "suwayomi_url": "https://suwayomi.test",
             "suwayomi_source_id": SOURCE,
         },
@@ -189,7 +189,7 @@ async def test_the_comics_search_answers_with_covers_suwayomi_can_serve(
     await client.put(
         "/api/settings",
         json={
-            "comicvine_token": "cv-key",
+            "metron_token": "metron-key",
             "suwayomi_url": "https://suwayomi.test/",
             "suwayomi_source_id": SOURCE,
         },
@@ -237,7 +237,7 @@ async def test_latest_is_kept_and_answered_at_once_while_it_is_asked_again(
     await client.put(
         "/api/settings",
         json={
-            "comicvine_token": "cv-key",
+            "metron_token": "metron-key",
             "suwayomi_url": "https://suwayomi.test/",
             "suwayomi_source_id": SOURCE,
         },

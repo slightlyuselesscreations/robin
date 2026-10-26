@@ -161,7 +161,7 @@ export type Settings = {
   sonarr_root: string
   sonarr_add: boolean
   has_hardcover_token: boolean
-  has_comicvine_token: boolean
+  has_metron_token: boolean
   /** What Books hides: literary types, categories and genre slugs, then genres always shown. */
   books_hidden_literary_types: number[]
   books_hidden_categories: number[]
@@ -176,7 +176,7 @@ export type Settings = {
   comics_schedule: Notice[]
   screen_schedule: Notice[]
   books_schedule: Notice[]
-  /** The Comic Vine publishers the weekly #1s digest names, every one while empty. */
+  /** The Metron publishers the weekly #1s digest names, every one while empty. */
   comics_digest_publishers: { id: number; name: string }[]
   /** Quiet hours, [start, end] in server local hours, empty for none. */
   games_quiet: number[]
@@ -285,21 +285,22 @@ export type Series = {
   issues?: number | null
 }
 
-/** A new #1 as Comic Vine lists it. */
+/** An issue as Metron lists it. */
 export type Comic = {
   id: string
   title: string
   url: string
   publisher: string
-  /** Comic Vine's ids for its publisher and its series, null for a series monitored from LOCG. */
+  /** Metron's ids for its publisher and its series, null for a series monitored from LOCG.
+   * The publisher is null too until Robin has read it. */
   publisher_id: number | null
-  volume_id: number | null
-  /** Its number in the series, as Comic Vine writes it, null for a series monitored from LOCG. */
+  series_id: number | null
+  /** Its number in the series, as Metron writes it, null for a series monitored from LOCG. */
   number: string | null
   /** Its store date, a Wednesday. */
   date: string | null
   cover: string | null
-  /** Its volume on Comic Vine. */
+  /** Its series on Metron. */
   series_url: string | null
   /** The issue page, present once Robin has read it. */
   detail: ComicDetail | null
@@ -310,19 +311,24 @@ export type Comic = {
 /** Every issue of the current week, of every publisher. */
 export type ComicIssues = {
   week: string
+  /** Null for the week the first of this month falls in, the earliest listed. */
+  previous: string | null
+  next: string
   issues: Comic[]
 }
 
-/** What an issue on Comic Vine says beyond the listing. */
+/** What an issue on Metron says beyond the listing. */
 export type ComicDetail = {
   /** The issue's own title, where it has one. */
   name: string | null
   synopsis: string
   cover_date: string | null
-  /** Names by role, in the order Comic Vine lists them. */
+  /** Names by role, in the order Metron lists them. */
   creators: Record<string, string[]>
   /** The same with the id each opens as a favourite by. */
   people: Record<string, Ref[]>
+  /** Its publisher, which a list names only once Robin has read it. */
+  publisher: Ref | null
   /** Its series' name. */
   series: string | null
   story_arcs: string[]
@@ -336,11 +342,11 @@ export type ComicDetail = {
 /** A series monitored from its #1, waiting for the Suwayomi source or already in the library. */
 export type MonitoredComic = {
   id: number
-  /** The issue it was monitored from, a Comic Vine id, or a LOCG one for older rows. */
+  /** The issue it was monitored from, a Metron id, or a LOCG one for older rows. */
   issue_id: string
-  /** Its series on Comic Vine, null for one monitored from LOCG. */
-  volume_id: number | null
-  /** Its next issue from today, while Comic Vine dates one. */
+  /** Its series on Metron, null for one monitored from LOCG. */
+  series_id: number | null
+  /** Its next issue from today, while Metron dates one. */
   next: { id: string; title: string; date: string | null } | null
   title: string
   series: string
@@ -507,7 +513,7 @@ export type Health = {
   igdb: ServiceHealth
   tmdb: ServiceHealth
   hardcover: ServiceHealth
-  comicvine: ServiceHealth
+  metron: ServiceHealth
   prowlarr: ServiceHealth
   predb: ServiceHealth
   suwayomi: ServiceHealth
@@ -544,7 +550,7 @@ export const SERVICE_LABELS = {
   igdb: 'IGDB',
   tmdb: 'TMDB',
   hardcover: 'Hardcover',
-  comicvine: 'Comic Vine',
+  metron: 'Metron',
   prowlarr: 'Prowlarr',
   predb: 'PreDB',
   suwayomi: 'Suwayomi',
@@ -988,9 +994,14 @@ export const api = {
       body: JSON.stringify({ want }),
     }),
   favourites: () => request<Favourite[]>('/api/favourites'),
-  searchFavourites: (category: FavouriteCategory, q: string, everything = false) =>
+  searchFavourites: (
+    category: FavouriteCategory,
+    q: string,
+    everything = false,
+    kind: FavouriteKind | null = null,
+  ) =>
     request<Entity[]>(
-      `/api/favourites/search?category=${category}&q=${encodeURIComponent(q)}&everything=${everything}`,
+      `/api/favourites/search?category=${category}&q=${encodeURIComponent(q)}&everything=${everything}${kind ? `&kind=${kind}` : ''}`,
     ),
   favourite: (category: FavouriteCategory, kind: FavouriteKind, id: number) =>
     request<FavouriteDetail>(`/api/favourites/${category}/${kind}/${id}`),
@@ -1020,13 +1031,14 @@ export const api = {
   arrRemove: (kind: ScreenKind, tmdbId: number, deleteFiles: boolean) =>
     request<void>(`/api/arr/${kind}/${tmdbId}?delete_files=${deleteFiles}`, { method: 'DELETE' }),
   comicDetail: (comic: Comic) => request<ComicDetail>(`/api/comics/issue/${comic.id}`),
-  monitorComic: ({ id, title, url, publisher, cover, volume_id }: Comic, week: string) =>
+  monitorComic: ({ id, title, url, publisher, cover, series_id }: Comic, week: string) =>
     request<MonitoredComic>('/api/comics/monitored', {
       method: 'POST',
-      body: JSON.stringify({ id, title, url, publisher, cover, volume_id, week }),
+      body: JSON.stringify({ id, title, url, publisher, cover, series_id, week }),
     }),
   comic: (id: string) => request<Comic>(`/api/comics/comic/${id}`),
-  comicIssues: () => request<ComicIssues>('/api/comics/issues'),
+  comicIssues: (week?: string) =>
+    request<ComicIssues>(`/api/comics/issues${week ? `?week=${week}` : ''}`),
   latestComics: () => request<Series[]>('/api/comics/latest'),
   searchComics: (q: string) => request<Series[]>(`/api/comics/search?q=${encodeURIComponent(q)}`),
   series: (id: number) => request<Series>(`/api/comics/series/${id}`),

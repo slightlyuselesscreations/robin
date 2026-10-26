@@ -116,7 +116,7 @@ function game(g: MonitoredGame): Watched {
   }
 }
 
-/** A series is dated by its next issue, while Comic Vine dates one, and opens on it. */
+/** A series is dated by its next issue, while Metron dates one, and opens on it. */
 function comic(c: MonitoredComic): Watched {
   const state = COMIC_STATE[c.status]
   return {

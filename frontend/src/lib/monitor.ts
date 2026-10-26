@@ -41,11 +41,15 @@ export function useGameMonitor(done?: () => void) {
 /** A comic series, monitored from its #1 and looked for on Suwayomi. */
 export function useComicMonitor(done?: () => void) {
   const queryClient = useQueryClient()
-  const settled = () => void queryClient.invalidateQueries({ queryKey: ['comics-monitored'] })
+  // The list is set at once, since reading it again waits on Metron for each series' next issue.
+  const settled = (edit: (rows: MonitoredComic[]) => MonitoredComic[]) => {
+    queryClient.setQueryData<MonitoredComic[]>(['comics-monitored'], (rows) => rows && edit(rows))
+    void queryClient.invalidateQueries({ queryKey: ['comics-monitored'] })
+  }
   const start = useMutation({
     mutationFn: ({ comic, week }: { comic: Comic; week: string }) => api.monitorComic(comic, week),
     onSuccess: (series) => {
-      settled()
+      settled((rows) => [...rows.filter((row) => row.id !== series.id), series])
       toast.success(
         series.status === 'added'
           ? `${series.series} is in your library`
@@ -57,7 +61,7 @@ export function useComicMonitor(done?: () => void) {
   const stop = useMutation({
     mutationFn: (monitor: MonitoredComic) => api.stopMonitoringComic(monitor.id),
     onSuccess: (_, monitor) => {
-      settled()
+      settled((rows) => rows.filter((row) => row.id !== monitor.id))
       toast.success(`Stopped monitoring ${monitor.series}`)
       done?.()
     },

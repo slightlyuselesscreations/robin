@@ -80,9 +80,9 @@ LIMITS: dict[Source, Limit] = {
     "tmdb": Limit("TMDB", 20, 1.0, 8, frozenset({429}), 60, 3600),
     # Hardcover publishes 60 a minute.
     "hardcover": Limit("Hardcover", 50, 60.0, 2, frozenset({429}), 60, 3600),
-    # Metron publishes 20 a minute and 5000 a day. One every four seconds, evenly, so a page
-    # never waits out a minute behind a burst of the hourly loop.
-    "metron": Limit("Metron", 1, 4.0, 1, frozenset({429}), 60, 3600),
+    # Metron publishes 20 a minute and 5000 a day. 18 leaves room for a clock off by a call, and
+    # what is not a page's is spread at half that pace, `comics._get`, so a page goes at once.
+    "metron": Limit("Metron", 18, 60.0, 2, frozenset({429}), 60, 3600),
     # PreDB.net publishes 30 a minute and blocks an address that overloads it.
     "predb": Limit("PreDB", 20, 60.0, 1, frozenset({429}), 60, 3600),
     # GitHub publishes 60 an hour for an address without a token, refused with 403 or 429.

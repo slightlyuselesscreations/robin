@@ -19,8 +19,8 @@ import {
   OutLink,
   Summary,
 } from '@/components/MediaDialog'
+import { FlightNotice } from '@/components/MediaCard'
 import { Tip } from '@/components/Page'
-import { Spinner } from '@/components/ui/spinner'
 import {
   COMIC_STATE,
   STATE_LABEL,
@@ -66,10 +66,9 @@ export function AnyComicDialog() {
 const ROLES = ['Writer', 'Artist', 'Penciller', 'Inker', 'Colorist', 'Cover Artist', 'Letterer']
 
 /**
- * One #1, laid out like the game dialog. The listing gives the title and the cover at once.
- * The rest comes from the issue, which the current week already has in the cache and any
- * other week reads from Metron the first time the issue is opened. A series monitored
- * from LOCG has nothing more to read.
+ * One issue, laid out like the game dialog. The listing gives the title and the cover at once.
+ * The rest is read from Metron when it is opened, and kept until Metron edits the issue. A
+ * series monitored from LOCG has nothing more to read.
  */
 export function ComicDialog({
   comic,
@@ -109,7 +108,7 @@ function Body({
 
   const readable = metronIssue(comic)
   const detail = useQuery({
-    queryKey: ['comic', comic.id],
+    queryKey: ['comic', comic.id, comic.modified ?? null],
     queryFn: () => api.comicDetail(comic),
     enabled: readable,
     initialData: comic.detail ?? undefined,
@@ -174,10 +173,12 @@ function Body({
                       : null
                 }
               />
+              <Fact label="Imprint" value={data.imprint ? [data.imprint] : null} />
               <Fact label="Story arc" value={data.story_arcs} />
               <Fact label="First appearance" value={data.first_appearances} />
               <Fact label="Characters" value={data.characters} />
               <Fact label="Teams" value={data.teams} />
+              <Fact label="Universe" value={data.universes} />
             </Facts>
           ) : detail.isError ? (
             <p className="flex items-center gap-1.5 text-xs text-bad">
@@ -185,7 +186,7 @@ function Body({
               {errorText(detail.error, 'Could not read the issue')}
             </p>
           ) : (
-            <Spinner className="size-8 text-ink-dim" />
+            <FlightNotice>Loading Metron data, please keep flying...</FlightNotice>
           )}
 
           <Links>
@@ -199,7 +200,7 @@ function Body({
         {data?.synopsis ? <Summary>{data.synopsis}</Summary> : null}
 
         {data?.variants.length ? (
-          <div className="grid shrink-0 grid-cols-4 gap-2 sm:grid-cols-6">
+          <div className="grid grid-cols-4 content-start gap-2 sm:min-h-0 sm:flex-1 sm:grid-cols-6 sm:overflow-y-auto">
             {data.variants.map((variant) => (
               <Tip key={variant.image} content={variant.name} when={() => Boolean(variant.name)}>
                 <button

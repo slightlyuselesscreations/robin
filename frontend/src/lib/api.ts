@@ -302,7 +302,9 @@ export type Comic = {
   cover: string | null
   /** Its series on Metron. */
   series_url: string | null
-  /** The issue page, present once Robin has read it. */
+  /** When Metron last edited it, null where no list named it. */
+  modified?: string | null
+  /** The issue page, present once it was opened. */
   detail: ComicDetail | null
   /** The favourite it comes from: its series, publisher, or a writer or artist. */
   favourite?: string | null
@@ -331,11 +333,15 @@ export type ComicDetail = {
   people: Record<string, Ref[]>
   /** Its publisher, which a list names only once Robin has read it. */
   publisher: Ref | null
+  /** The publisher's line it came out under, such as Black Label. Absent from an issue read before it was kept. */
+  imprint?: string | null
   /** Its series' name. */
   series: string | null
   story_arcs: string[]
   characters: string[]
   teams: string[]
+  /** Absent from an issue read before it was kept. */
+  universes?: string[]
   /** Characters who first appear in it. */
   first_appearances: string[]
   variants: { name: string; image: string }[]
@@ -1032,7 +1038,10 @@ export const api = {
   arrAdd: (app: Library, tmdbId: number) => post(`/api/arr/${app}`, { tmdb_id: tmdbId }),
   arrRemove: (kind: ScreenKind, tmdbId: number, deleteFiles: boolean) =>
     request<void>(`/api/arr/${kind}/${tmdbId}?delete_files=${deleteFiles}`, { method: 'DELETE' }),
-  comicDetail: (comic: Comic) => request<ComicDetail>(`/api/comics/issue/${comic.id}`),
+  comicDetail: (comic: Comic) =>
+    request<ComicDetail>(
+      `/api/comics/issue/${comic.id}${comic.modified ? `?modified=${encodeURIComponent(comic.modified)}` : ''}`,
+    ),
   monitorComic: ({ id, title, url, publisher, cover, series_id }: Comic, week: string) =>
     request<MonitoredComic>('/api/comics/monitored', {
       method: 'POST',

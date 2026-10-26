@@ -17,8 +17,8 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["comics"])
 
 
-# Background reads of what a week's issues lack, by week, kept so they are not collected
-# mid-read and a page asking again does not start a second.
+# Background reads of the publishers a week's issues lack, by week, kept so they are not
+# collected mid-read and a page asking again does not start a second.
 _reading: dict[date, asyncio.Task[None]] = {}
 
 
@@ -28,19 +28,18 @@ async def week_issues(week: date | None = None) -> dict[str, Any]:
     and the answer is keyed by its Wednesday. The earliest is the week the first of this month
     falls in, an earlier one answers as that, and its `previous` is null.
 
-    An issue carries its details only when they are already cached, and its publisher as far
-    as one is kept. Those it lacks are read behind the answer, and `reading` says so, for the
-    page to ask again."""
+    An issue carries its details only when it was opened before, and its publisher as far as
+    one is kept. The publishers it lacks are read behind the answer, and `reading` says so, for
+    the page to ask again."""
     first = comics.first_week()
     wednesday = max(first, comics.week_of(week or datetime.now(UTC).date()))
     try:
         found = await comics.week_issues(wednesday)
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         raise HTTPException(status_code=502, detail="Metron is unreachable") from exc
-    read = comics.details([c["id"] for c in found])
-    lacking = [c for c in found if c["id"] not in read]
+    lacking = comics.lacking_publishers(found)
     if lacking and wednesday not in _reading:
-        task = asyncio.create_task(comics.read_week_behind(wednesday, lacking))
+        task = asyncio.create_task(comics.read_publishers_behind(lacking))
         _reading[wednesday] = task
         task.add_done_callback(lambda _: _reading.pop(wednesday, None))
     return {
@@ -48,17 +47,16 @@ async def week_issues(week: date | None = None) -> dict[str, Any]:
         "reading": wednesday in _reading,
         "previous": (wednesday - timedelta(days=7)).isoformat() if wednesday > first else None,
         "next": (wednesday + timedelta(days=7)).isoformat(),
-        "issues": _listed(found, read),
+        "issues": await _listed(found),
     }
 
 
-def _listed(
-    issues: list[dict[str, Any]], read: dict[str, dict[str, Any] | None]
-) -> list[dict[str, Any]]:
-    """Issues as a list shows them: with their details when already cached, starred, and
+async def _listed(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Issues as a list shows them: with their details when opened before, starred, and
     without what Settings hides."""
     settings = db.get_settings()
-    listed = [{**c, "detail": read.get(c["id"])} for c in issues]
+    read = comics.details(issues)
+    listed = await comics.credit(settings, [{**c, "detail": read.get(c["id"])} for c in issues])
     shown = [c for c in listed if hidden.comic(settings, comics.made(c))]
     return comics.star(shown, db.favourites("comics"))
 
@@ -76,10 +74,14 @@ async def any_issue(comic_id: str = Path(pattern=r"^\d+$")) -> dict[str, Any]:
 
 
 @router.get("/comics/issue/{comic_id}")
-async def issue_detail(comic_id: str = Path(pattern=r"^\d+$")) -> dict[str, Any]:
-    """One issue, read from Metron when it is not cached and kept a few hours after."""
+async def issue_detail(
+    comic_id: str = Path(pattern=r"^\d+$"),
+    modified: str | None = Query(default=None, max_length=40),
+) -> dict[str, Any]:
+    """One issue, read from Metron when it is opened. `modified` is when its list says Metron
+    last edited it: a detail read at that one is kept until a list names a newer one."""
     try:
-        found = await comics.detail(comic_id, comics.ON_DEMAND_TTL)
+        found = await comics.detail(comic_id, modified)
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(status_code=502, detail="Metron is unreachable") from exc
     if found is None:

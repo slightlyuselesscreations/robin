@@ -65,6 +65,7 @@ class Metron:
             "cover_date": "2026-12-01",
             "store_date": found["day"].isoformat() if found["day"] else None,
             "image": f"https://static.metron.test/{found['id']}.jpg",
+            "modified": found.get("modified", "2026-10-01T09:00:00-04:00"),
         }
 
     def _detail(self, found: dict[str, Any]) -> dict[str, Any]:
@@ -88,6 +89,8 @@ class Metron:
             "arcs": [{"id": 1, "name": "Midnight"}],
             "characters": [{"id": 2, "name": "Spider-Man"}],
             "teams": [],
+            "universes": [{"id": 122, "name": "Earth 616"}],
+            "imprint": {"id": 3, "name": "Black Label"},
             "variants": [
                 {"name": "Cover B", "image": "https://static.metron.test/1b.jpg"},
                 {"name": "Cover C", "image": None},

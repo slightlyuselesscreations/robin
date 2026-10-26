@@ -124,6 +124,7 @@ async def coming(
     if category == "books":
         return [b for b in found if hidden.book(settings, b)]
     if category == "comics":
+        await comics.credit(settings, found)
         return [c for c in found if hidden.comic(settings, comics.made(c))]
     return [g for g in found if hidden.game(settings, g)]
 

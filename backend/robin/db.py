@@ -1051,8 +1051,12 @@ _refreshing: dict[str, asyncio.Task[Any]] = {}
 Lifetime = int | Callable[[Any], int]
 
 
-def _refresh(key: str, ttl: Lifetime, fetch: Callable[[], Awaitable[Any]]) -> asyncio.Task[Any]:
-    """One fetch of `key` at a time, however many ask for it, kept once it answers."""
+def _refresh(
+    key: str, ttl: Lifetime, fetch: Callable[[], Awaitable[Any]], waited: bool
+) -> asyncio.Task[Any]:
+    """One fetch of `key` at a time, however many ask for it, kept once it answers. `waited` is
+    a page waiting on it, which the fetch carries as a request asking fresh, so a source can let
+    it ahead of the hourly loop."""
     task = _refreshing.get(key)
     if task is not None:
         return task
@@ -1070,7 +1074,10 @@ def _refresh(key: str, ttl: Lifetime, fetch: Callable[[], Awaitable[Any]]) -> as
 
     # A context of its own, so what it reads is asked for fresh and is not marked on the request
     # that started it.
-    task = asyncio.create_task(run(), context=contextvars.Context())
+    context = contextvars.Context()
+    if waited:
+        context.run(STALE.set, Stale(wait=True))
+    task = asyncio.create_task(run(), context=context)
     task.add_done_callback(done)
     _refreshing[key] = task
     return task
@@ -1086,8 +1093,8 @@ async def remember(key: str, ttl: Lifetime, fetch: Callable[[], Awaitable[Any]])
     found, live, value = _cache_peek(key)
     if live:
         return value
-    task = _refresh(key, ttl, fetch)
     mark = STALE.get()
+    task = _refresh(key, ttl, fetch, mark is not None and (not found or mark.wait))
     if found and mark is not None and not mark.wait:
         mark.served = True
         return value

@@ -37,15 +37,18 @@ def test_an_issue_is_read_for_everything_the_listing_lacks() -> None:
         "series_id": 100,
         "series": "Midnight Spider-Man",
         "publisher": {"id": 1, "name": "Marvel"},
+        "imprint": "Black Label",
         "number": "1",
         "date": "2026-10-07",
         "cover": "https://static.metron.test/1.jpg",
         "url": "https://metron.cloud/issue/1/",
+        "modified": "2026-10-01T09:00:00-04:00",
         "synopsis": "A young Peter Parker is transformed & more.",
         "cover_date": "2026-12-01",
         "story_arcs": ["Midnight"],
         "characters": ["Spider-Man"],
         "teams": [],
+        "universes": ["Earth 616"],
         "first_appearances": [],
         "variants": [{"name": "Cover B", "image": "https://static.metron.test/1b.jpg"}],
     }
@@ -164,7 +167,7 @@ async def test_an_unreachable_metron_is_an_error_not_an_empty_week(
 ) -> None:
     stub_http(monkeypatch, lambda _: httpx.Response(503))
     assert (await client.get("/api/comics/issues")).status_code == 502
-    assert db.cache_get(f"comics:issues:v3:{metron.this_week()}") is None
+    assert db.cache_get(f"comics:issues:v4:{metron.this_week()}") is None
 
 
 async def test_a_refusal_pauses_metron_and_nothing_asks_it_until_the_pause_ends(
@@ -186,14 +189,14 @@ async def test_a_refusal_pauses_metron_and_nothing_asks_it_until_the_pause_ends(
     assert len(fake.asked) == 1, "nothing reaches Metron while it is paused"
 
 
-async def test_the_current_week_and_two_ahead_are_read_in_full_once(
+async def test_the_current_week_and_two_ahead_are_listed_and_no_issue_is_read(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = metron.stub(monkeypatch)
-    # Each week's issues, then each issue once, which names its series' publisher.
-    assert await comics.prefetch_weeks() == 4
-    assert [r.url.path for r in fake.asked if r.url.path != "/api/issue/"] == [
-        f"/api/issue/{n}/" for n in (1, 2, 3, 4)
+    # Each week's issues, then each series once, which names its publisher.
+    assert await comics.prefetch_weeks() == 3
+    assert sorted(r.url.path for r in fake.asked if r.url.path != "/api/issue/") == [
+        f"/api/series/{n}/" for n in (100, 200, 300)
     ]
     assert len([r for r in fake.asked if r.url.path == "/api/issue/"]) == 3
 
@@ -202,7 +205,7 @@ async def test_the_current_week_and_two_ahead_are_read_in_full_once(
     every = (await client.get("/api/comics/issues")).json()
     assert fake.asked == []
     marvel, dc, manga = every["issues"]
-    assert marvel["detail"]["creators"]["Writer"] == ["Phillip Kennedy Johnson"]
+    assert marvel["detail"] is None, "an issue is read when it is opened"
     assert (marvel["publisher"], marvel["publisher_id"]) == ("Marvel", 1)
     assert (manga["publisher"], manga["publisher_id"], manga["series_id"]) == (
         "Some Manga House",
@@ -211,7 +214,7 @@ async def test_the_current_week_and_two_ahead_are_read_in_full_once(
     )
 
 
-async def test_a_week_lists_at_once_and_reads_the_details_it_lacks_behind(
+async def test_a_week_lists_at_once_and_reads_the_publishers_it_lacks_behind(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = metron.stub(monkeypatch)
@@ -225,13 +228,18 @@ async def test_a_week_lists_at_once_and_reads_the_details_it_lacks_behind(
         await asyncio.sleep(0)
     again = (await client.get("/api/comics/issues")).json()
     assert not again["reading"]
-    assert all(c["detail"] for c in again["issues"])
+    assert not any(c["detail"] for c in again["issues"])
     assert [c["publisher"] for c in again["issues"]] == [
         "Marvel",
         "DC Comics",
         "Some Manga House",
     ]
     assert all(r.url.host == "metron.cloud" for r in fake.asked)
+    assert not [
+        r
+        for r in fake.asked
+        if r.url.path.startswith("/api/issue/") and r.url.path != "/api/issue/"
+    ]
 
 
 async def test_the_arrows_step_to_a_week_ahead_never_before_the_month(
@@ -258,6 +266,12 @@ async def test_an_issue_is_read_once_when_opened(
     assert first.json() == again.json()
     assert first.json()["cover_date"] == "2026-12-01"
     assert len(fake.asked) == 1
+    listed = "/api/comics/issue/1?modified=2026-10-01T09:00:00-04:00"
+    assert (await client.get(listed)).json()["synopsis"]
+    assert (await client.get(listed)).json()["synopsis"]
+    assert len(fake.asked) == 2, "read once at the modified its list names"
+    await client.get("/api/comics/issue/1?modified=2026-10-20T09:00:00-04:00")
+    assert len(fake.asked) == 3, "read again once Metron edited it"
     assert (await client.get("/api/comics/issue/77")).status_code == 404
     assert (await client.get("/api/comics/issue/..%2Fx")).status_code in (404, 422)
 
@@ -300,3 +314,20 @@ async def test_the_hourly_loop_gives_way_to_a_page(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(comics, "_pages_waiting", 0)
     await behind
     assert len(fake.asked) == 1
+
+
+async def test_a_fetch_a_page_waits_on_keeps_its_turn_ahead_of_the_loop() -> None:
+    marks: list[db.Stale | None] = []
+
+    async def fetch() -> int:
+        marks.append(db.STALE.get())
+        return 1
+
+    token = db.STALE.set(db.Stale())
+    try:
+        await db.remember("test:page", 60, fetch)
+    finally:
+        db.STALE.reset(token)
+    await db.remember("test:loop", 60, fetch)
+    assert marks[0] is not None, "a page waiting on it goes ahead"
+    assert marks[1] is None, "the loop's own fetch stays behind"

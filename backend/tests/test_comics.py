@@ -47,7 +47,7 @@ def test_an_issue_is_read_for_everything_the_listing_lacks() -> None:
         "characters": ["Spider-Man"],
         "teams": [],
         "first_appearances": [],
-        "variants": 2,
+        "variants": [{"name": "Cover B", "image": "https://static.metron.test/1b.jpg"}],
     }
 
 
@@ -181,21 +181,24 @@ async def test_a_refusal_pauses_metron_and_nothing_asks_it_until_the_pause_ends(
     assert len(fake.asked) == 1
 
     with pytest.raises(upstream.RateLimited):
-        await comics.prefetch_week()
+        await comics.prefetch_weeks()
     assert (await client.get("/api/comics/issues")).status_code == 429
     assert len(fake.asked) == 1, "nothing reaches Metron while it is paused"
 
 
-async def test_the_current_week_is_read_in_full_once_its_publishers_with_it(
+async def test_the_current_week_and_two_ahead_are_read_in_full_once(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = metron.stub(monkeypatch)
-    # Every issue of the week, then each issue once, which names its series' publisher.
-    assert await comics.prefetch_week() == 3
-    assert [r.url.path for r in fake.asked[1:]] == [f"/api/issue/{n}/" for n in (1, 2, 3)]
+    # Each week's issues, then each issue once, which names its series' publisher.
+    assert await comics.prefetch_weeks() == 4
+    assert [r.url.path for r in fake.asked if r.url.path != "/api/issue/"] == [
+        f"/api/issue/{n}/" for n in (1, 2, 3, 4)
+    ]
+    assert len([r for r in fake.asked if r.url.path == "/api/issue/"]) == 3
 
     fake.asked.clear()
-    assert await comics.prefetch_week() == 0
+    assert await comics.prefetch_weeks() == 0
     every = (await client.get("/api/comics/issues")).json()
     assert fake.asked == []
     marvel, dc, manga = every["issues"]
@@ -208,18 +211,21 @@ async def test_the_current_week_is_read_in_full_once_its_publishers_with_it(
     )
 
 
-async def test_a_week_lists_at_once_and_reads_the_publishers_it_lacks_behind(
+async def test_a_week_lists_at_once_and_reads_the_details_it_lacks_behind(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = metron.stub(monkeypatch)
     first = (await client.get("/api/comics/issues")).json()
     assert [c["publisher"] for c in first["issues"]] == ["", "", ""]
+    assert first["reading"]
     # The read behind the answer, given its turns.
-    for _ in range(50):
-        if comics.publisher_of(300):
+    for _ in range(200):
+        if not (await client.get("/api/comics/issues")).json()["reading"]:
             break
         await asyncio.sleep(0)
     again = (await client.get("/api/comics/issues")).json()
+    assert not again["reading"]
+    assert all(c["detail"] for c in again["issues"])
     assert [c["publisher"] for c in again["issues"]] == [
         "Marvel",
         "DC Comics",

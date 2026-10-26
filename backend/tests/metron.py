@@ -88,7 +88,10 @@ class Metron:
             "arcs": [{"id": 1, "name": "Midnight"}],
             "characters": [{"id": 2, "name": "Spider-Man"}],
             "teams": [],
-            "variants": [{"name": "A"}, {"name": "B"}],
+            "variants": [
+                {"name": "Cover B", "image": "https://static.metron.test/1b.jpg"},
+                {"name": "Cover C", "image": None},
+            ],
             "cv_id": found.get("cv_id"),
         }
 

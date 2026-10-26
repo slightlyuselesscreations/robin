@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { TriangleAlert } from 'lucide-react'
 
 import {
@@ -7,6 +8,7 @@ import {
   Fact,
   Facts,
   FavouriteFact,
+  ImageZoom,
   Links,
   MediaBanner,
   MediaBody,
@@ -17,6 +19,7 @@ import {
   OutLink,
   Summary,
 } from '@/components/MediaDialog'
+import { Tip } from '@/components/Page'
 import { Spinner } from '@/components/ui/spinner'
 import {
   COMIC_STATE,
@@ -25,6 +28,7 @@ import {
   type MonitoredComic,
   api,
   errorText,
+  imageSrc,
 } from '@/lib/api'
 import { useSettings } from '@/lib/categories'
 import {
@@ -115,6 +119,7 @@ function Body({
   })
 
   const { start, stop } = useComicMonitor(onClose)
+  const [zoomed, setZoomed] = useState<{ src: string; name: string } | null>(null)
 
   const data = detail.data
   const cover = comic.cover
@@ -188,13 +193,38 @@ function Body({
               {fromMetron(comic) ? 'Metron' : 'League of Comic Geeks'}
             </OutLink>
             {comic.series_url ? <OutLink href={comic.series_url}>Series</OutLink> : null}
-            {data?.variants ? (
-              <span className="text-2xs text-ink-faint">{data.variants} variant covers</span>
-            ) : null}
           </Links>
         </MediaHead>
 
         {data?.synopsis ? <Summary>{data.synopsis}</Summary> : null}
+
+        {data?.variants.length ? (
+          <div className="grid shrink-0 grid-cols-4 gap-2 sm:grid-cols-6">
+            {data.variants.map((variant) => (
+              <Tip key={variant.image} content={variant.name} when={() => Boolean(variant.name)}>
+                <button
+                  type="button"
+                  aria-label={`Enlarge ${variant.name || 'variant cover'}`}
+                  onClick={() => setZoomed({ src: variant.image, name: variant.name })}
+                  className="cursor-zoom-in overflow-hidden rounded-sm border border-line bg-base transition-colors hover:border-accent focus-visible:border-accent focus-visible:outline-none"
+                >
+                  <img
+                    src={imageSrc(variant.image)}
+                    alt=""
+                    loading="lazy"
+                    className="aspect-[2/3] w-full object-cover"
+                  />
+                </button>
+              </Tip>
+            ))}
+          </div>
+        ) : null}
+
+        <ImageZoom
+          src={zoomed?.src ?? null}
+          alt={zoomed?.name || `${comic.title} variant cover`}
+          onClose={() => setZoomed(null)}
+        />
 
         <MediaFooter
           status={

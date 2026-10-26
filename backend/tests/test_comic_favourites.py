@@ -58,7 +58,7 @@ async def test_a_series_favourite_has_its_issues_coming_starred(
 async def test_a_writer_and_a_publisher_list_issues_weeks_ahead_and_star_the_week(
     client: AsyncClient, fake: metron.Metron
 ) -> None:
-    await comics.prefetch_week()
+    await comics.prefetch_weeks()
     await client.post("/api/favourites", json={"category": "comics", "kind": "publisher", "id": 1})
     publisher = (await client.get("/api/favourites")).json()[0]
     assert publisher["image"] is None, "a publisher is a name, never a logo"
@@ -82,7 +82,7 @@ async def test_a_writer_and_a_publisher_list_issues_weeks_ahead_and_star_the_wee
 
 
 async def test_a_hidden_publisher_leaves_the_week(client: AsyncClient, fake: metron.Metron) -> None:
-    await comics.prefetch_week()
+    await comics.prefetch_weeks()
     body = {"mode": "hide", "category": "comics", "kind": "publisher", "id": 1}
     assert (await client.post("/api/favourites/filters", json=body)).status_code == 200
     week = (await client.get("/api/comics/issues")).json()["issues"]

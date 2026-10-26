@@ -17,8 +17,9 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["comics"])
 
 
-# Background reads of what a week's issues lack, kept so they are not collected mid-read.
-_reading: set[asyncio.Task[None]] = set()
+# Background reads of what a week's issues lack, by week, kept so they are not collected
+# mid-read and a page asking again does not start a second.
+_reading: dict[date, asyncio.Task[None]] = {}
 
 
 @router.get("/comics/issues")
@@ -28,35 +29,37 @@ async def week_issues(week: date | None = None) -> dict[str, Any]:
     falls in, an earlier one answers as that, and its `previous` is null.
 
     An issue carries its details only when they are already cached, and its publisher as far
-    as one is kept. Those it lacks are read behind the answer."""
+    as one is kept. Those it lacks are read behind the answer, and `reading` says so, for the
+    page to ask again."""
     first = comics.first_week()
     wednesday = max(first, comics.week_of(week or datetime.now(UTC).date()))
     try:
         found = await comics.week_issues(wednesday)
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         raise HTTPException(status_code=502, detail="Metron is unreachable") from exc
-    lacking = {c["series_id"] for c in found if c["series_id"] and not c["publisher_id"]}
-    if lacking:
-        task = asyncio.create_task(comics.read_publishers_behind(lacking))
-        _reading.add(task)
-        task.add_done_callback(_reading.discard)
+    read = comics.details([c["id"] for c in found])
+    lacking = [c for c in found if c["id"] not in read]
+    if lacking and wednesday not in _reading:
+        task = asyncio.create_task(comics.read_week_behind(wednesday, lacking))
+        _reading[wednesday] = task
+        task.add_done_callback(lambda _: _reading.pop(wednesday, None))
     return {
         "week": wednesday.isoformat(),
+        "reading": wednesday in _reading,
         "previous": (wednesday - timedelta(days=7)).isoformat() if wednesday > first else None,
         "next": (wednesday + timedelta(days=7)).isoformat(),
-        "issues": _listed(found),
+        "issues": _listed(found, read),
     }
 
 
-def _listed(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _listed(
+    issues: list[dict[str, Any]], read: dict[str, dict[str, Any] | None]
+) -> list[dict[str, Any]]:
     """Issues as a list shows them: with their details when already cached, starred, and
     without what Settings hides."""
     settings = db.get_settings()
-    shown = [
-        {**c, "detail": comics.cached_detail(c["id"])}
-        for c in issues
-        if hidden.comic(settings, comics.made(c))
-    ]
+    listed = [{**c, "detail": read.get(c["id"])} for c in issues]
+    shown = [c for c in listed if hidden.comic(settings, comics.made(c))]
     return comics.star(shown, db.favourites("comics"))
 
 

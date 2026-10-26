@@ -1017,6 +1017,19 @@ def cache_get(key: str) -> Any | None:
     return cache_lookup(key)[1]
 
 
+def cache_lookup_many(keys: list[str]) -> dict[str, Any]:
+    """The live rows under `keys`, by key, a stored None included, in one query."""
+    if not keys:
+        return {}
+    with conn() as c:
+        rows = c.execute(
+            f"SELECT key, value_json FROM cache WHERE expires_at >= ?"
+            f" AND key IN ({','.join('?' * len(keys))})",
+            (now(), *keys),
+        ).fetchall()
+    return {row["key"]: json.loads(row["value_json"]) for row in rows}
+
+
 @dataclass
 class Stale:
     """What one API request may be answered with. Set per request by `main.serve_stale`.

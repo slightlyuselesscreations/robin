@@ -58,6 +58,8 @@ PUBLISHER_OF_SECONDS = 90 * 24 * 3600
 
 # How far ahead a publisher's issues are listed for its favourite, a big one has hundreds.
 PUBLISHER_REACH = timedelta(days=90)
+# The weeks after the current one the hourly loop reads in full.
+PREFETCH_WEEKS = 2
 
 # Metron names itself what Robin is, in the User-Agent.
 USER_AGENT = f"Robin/{__version__} (self-hosted; +https://github.com/{updates.REPOSITORY})"
@@ -175,27 +177,30 @@ def client() -> httpx.AsyncClient:
     )
 
 
-# Metron calls a page is waiting on. Every other call, the hourly loop's, waits while there are
-# any, so a page never queues behind a week of issue details.
+# Metron calls a page is waiting on. Every other call, the hourly loop's and what is read behind
+# a page, waits while there are any, and takes `_behind` first, so at most one of them is in
+# Metron's queue and a page waits behind that one alone.
 _pages_waiting = 0
+_behind = asyncio.Lock()
 
 
 async def _get(http: httpx.AsyncClient, path: str, **params: str | int) -> dict[str, Any] | None:
     """One call to Metron, in its turn, a page's ahead of the hourly loop's. A refusal pauses it
     and raises RateLimited. What Metron does not have, a 404, is None."""
     global _pages_waiting
-    page = db.STALE.get() is not None
-    if page:
+    if db.STALE.get() is not None:
         _pages_waiting += 1
-    else:
-        while _pages_waiting:
-            await asyncio.sleep(0.5)
-    try:
-        async with upstream.slot("metron"):
-            resp = await http.get(path, params=params)
-    finally:
-        if page:
+        try:
+            async with upstream.slot("metron"):
+                resp = await http.get(path, params=params)
+        finally:
             _pages_waiting -= 1
+    else:
+        async with _behind:
+            while _pages_waiting:
+                await asyncio.sleep(0.5)
+            async with upstream.slot("metron"):
+                resp = await http.get(path, params=params)
     if resp.status_code == 404:
         return None
     if resp.status_code >= 400:
@@ -242,12 +247,6 @@ def publisher_of(series_id: int) -> dict[str, Any] | None:
     return found
 
 
-async def read_publishers_behind(series_ids: set[int]) -> None:
-    """`read_publishers` for a page that answered without them, giving way as the loop does."""
-    db.STALE.set(None)
-    await read_publishers(series_ids)
-
-
 async def read_publishers(series_ids: set[int]) -> None:
     """Read the publisher of each series not kept yet, from the series itself."""
     for series_id in sorted(series_ids):
@@ -260,9 +259,12 @@ async def read_publishers(series_ids: set[int]) -> None:
 
 def with_publishers(comics: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Each issue with its series' publisher, as far as one is kept."""
+    kept = db.cache_lookup_many(
+        [_publisher_key(c["series_id"]) for c in comics if c["series_id"] and not c["publisher_id"]]
+    )
     for comic in comics:
         if not comic.get("publisher_id"):
-            publisher = publisher_of(comic["series_id"]) or {}
+            publisher = kept.get(_publisher_key(comic["series_id"])) or {}
             comic["publisher"] = publisher.get("name") or ""
             comic["publisher_id"] = publisher.get("id")
     return comics
@@ -336,12 +338,27 @@ def parse_detail(issue: dict[str, Any] | None) -> dict[str, Any] | None:
         "teams": _names(issue.get("teams")),
         # Metron names no first appearance on an issue.
         "first_appearances": [],
-        "variants": len(issue.get("variants") or []),
+        "variants": [
+            {"name": v.get("name") or "", "image": v["image"]}
+            for v in issue.get("variants") or []
+            if v.get("image")
+        ],
     }
 
 
 def _detail_key(comic_id: str) -> str:
-    return f"comics:detail:v5:{comic_id}"
+    return f"comics:detail:v6:{comic_id}"
+
+
+def has_detail(comic_id: str) -> bool:
+    """Whether the issue was read, a None kept for one Metron does not have included."""
+    return db.cache_lookup(_detail_key(comic_id))[0]
+
+
+def details(comic_ids: list[str]) -> dict[str, dict[str, Any] | None]:
+    """The issues read so far, by id, one Metron does not have as None, in one query."""
+    kept = db.cache_lookup_many([_detail_key(i) for i in comic_ids])
+    return {i: kept[_detail_key(i)] for i in comic_ids if _detail_key(i) in kept}
 
 
 def cached_detail(comic_id: str) -> dict[str, Any] | None:
@@ -369,34 +386,53 @@ async def detail(comic_id: str, ttl: int) -> dict[str, Any] | None:
     return found
 
 
-async def prefetch_week() -> int:
-    """Read every issue of the current week not read before, and every series' publisher the
-    week's #1s and issues lack. Returns how many issues were read.
+async def read_week_behind(week: date, comics: list[dict[str, Any]]) -> None:
+    """Read the detail of each issue of a week a page listed without it, which names its
+    publisher too, giving way to pages as the hourly loop does. Issues whose publisher is not
+    kept go first, so the cards' tags fill before their credits. A failure ends it, and the
+    page asking again starts it over."""
+    db.STALE.set(None)
+    ttl = week_ttl(week, datetime.now(UTC))
+    for comic in sorted(comics, key=lambda c: bool(c["publisher_id"])):
+        if has_detail(comic["id"]):
+            continue
+        try:
+            await detail(comic["id"], ttl)
+        except (httpx.HTTPError, ValueError, upstream.UpstreamError) as exc:
+            log.warning("comics: reading %s stopped at %s: %s", week, comic["title"], exc)
+            return
 
-    Runs on the hourly loop, so the week is in the cache before anyone opens it, with the
-    credits that star a favourite writer or artist and the publisher of every card. Once it
-    is, a pass asks Metron nothing more until the next week starts.
+
+async def prefetch_weeks() -> int:
+    """Read every issue of the current week and the `PREFETCH_WEEKS` after it not read before,
+    each naming its series' publisher. Returns how many issues were read.
+
+    Runs on the hourly loop, so those weeks are in the cache before anyone opens them, with the
+    credits that star a favourite writer or artist and the publisher of every card. A week ahead
+    is kept a day, `week_ttl`, so it is read again daily as Metron fills it in. Every call gives
+    way to a page's, so an issue opened meanwhile is read first.
     """
     if not db.get_settings().comics_ready:
         return 0
     now = datetime.now(UTC)
-    week = week_of(now.date())
+    current = week_of(now.date())
     read = 0
-    try:
-        every = await week_issues(week)
-    except (httpx.HTTPError, ValueError, KeyError) as exc:
-        log.warning("comics: listing every issue of %s failed: %s", week, exc)
-        every = []
-    for comic in every:
-        if db.cache_lookup(_detail_key(comic["id"]))[0]:
-            continue
+    for week in (current + timedelta(weeks=n) for n in range(PREFETCH_WEEKS + 1)):
         try:
-            await detail(comic["id"], week_ttl(week, now))
-        except (httpx.HTTPError, ValueError) as exc:
-            log.warning("comics: %s failed: %s", comic["title"], exc)
+            every = await week_issues(week)
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
+            log.warning("comics: listing every issue of %s failed: %s", week, exc)
             continue
-        read += 1
-    await read_publishers({c["series_id"] for c in every if c["series_id"]})
+        known = details([c["id"] for c in every])
+        for comic in every:
+            if comic["id"] in known:
+                continue
+            try:
+                await detail(comic["id"], week_ttl(week, now))
+            except (httpx.HTTPError, ValueError) as exc:
+                log.warning("comics: %s failed: %s", comic["title"], exc)
+                continue
+            read += 1
     return read
 
 
@@ -607,7 +643,7 @@ async def favourite_releases(kind: str, ids: list[int]) -> list[dict[str, Any]]:
 
 def made(comic: dict[str, Any]) -> dict[str, list[int]]:
     """Who and what made an issue, by kind of favourite. Its people once its details are read."""
-    detail = comic.get("detail") or cached_detail(comic["id"]) or {}
+    detail = (comic["detail"] if "detail" in comic else cached_detail(comic["id"])) or {}
     return {
         "series": [comic["series_id"]] if comic.get("series_id") else [],
         "publisher": [comic["publisher_id"]] if comic.get("publisher_id") else [],

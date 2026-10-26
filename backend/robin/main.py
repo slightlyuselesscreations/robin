@@ -148,7 +148,7 @@ CHECKS = (
     arr.monitor_library,
     notify.notify_upcoming_releases,
     notify.notify_date_changes,
-    comics.prefetch_week,
+    comics.prefetch_weeks,
     comics.notify_new_firsts,
     favourites.notify_series,
     suwayomi.add_found_series,

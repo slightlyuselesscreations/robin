@@ -77,6 +77,8 @@ export function Comics() {
     queryKey: ['comic-issues', asked ?? 'current'],
     queryFn: () => api.comicIssues(asked),
     staleTime: 60 * 60_000,
+    // Publishers and credits fill in as Robin reads them, one issue every few seconds.
+    refetchInterval: (query) => (query.state.data?.reading ? 15_000 : false),
     retry: false,
   })
 

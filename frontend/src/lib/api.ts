@@ -314,6 +314,8 @@ export type ComicIssues = {
   /** Null for the week the first of this month falls in, the earliest listed. */
   previous: string | null
   next: string
+  /** Whether Robin is still reading the details, publishers among them, the issues lack. */
+  reading: boolean
   issues: Comic[]
 }
 
@@ -336,7 +338,7 @@ export type ComicDetail = {
   teams: string[]
   /** Characters who first appear in it. */
   first_appearances: string[]
-  variants: number
+  variants: { name: string; image: string }[]
 }
 
 /** A series monitored from its #1, waiting for the Suwayomi source or already in the library. */

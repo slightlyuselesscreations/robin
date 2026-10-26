@@ -2,7 +2,8 @@ FROM --platform=$BUILDPLATFORM node:26-alpine AS frontend
 WORKDIR /build
 # Node stopped bundling corepack in 25, so it comes from npm.
 RUN npm install -g corepack && corepack enable pnpm
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
+# pnpm-workspace.yaml carries the settings the install needs, so it goes in with the lockfile.
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm build

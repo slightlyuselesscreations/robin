@@ -20,6 +20,10 @@ on:
       - LICENSE
       - assets/**
   workflow_dispatch:
+    inputs:
+      release:
+        description: A tag to write the release of again from its commit, such as v0.0.9
+        required: false
 
 # Read only unless a job asks for more, so the checks and everything they install cannot write.
 permissions:
@@ -27,7 +31,7 @@ permissions:
 
 concurrency:
   # Cancel an in-flight run when a newer commit lands on the same branch or pull request.
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.release }}
   cancel-in-progress: true
 
 jobs:
@@ -78,7 +82,7 @@ jobs:
 
   build:
     needs: [backend, frontend]
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && !inputs.release
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -134,26 +138,34 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Run alone, without a build, to write an existing release again: Actions, image, Run
+    # workflow, with the tag as `release`.
+    if: >-
+      !cancelled() && (
+        (startsWith(github.ref, 'refs/tags/v') && needs.build.result == 'success')
+        || inputs.release
+      )
     runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
-      # An annotated tag names the release: its first line is the codename of a major release, or
-      # the version of any other, which titles it alone, and the rest the notes. A lightweight
-      # tag gets notes generated from the commits.
+      # The tagged commit's message is the release: its first line the codename of a major
+      # release, or the version of any other, which titles it alone, and the rest the notes.
+      # It is read from the commit and not the tag, since a tag made without
+      # `--cleanup=verbatim` loses every `#` line, the headings of the notes among them.
       - run: |
-          ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME")
-          if [ "$(jq -r .object.type <<< "$ref")" = tag ]; then
-            message=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$(jq -r .object.sha <<< "$ref")" --jq .message)
-            first=$(head -n 1 <<< "$message" | sed 's/^#* *//')
-            title="$GITHUB_REF_NAME, $first"
-            if [ "v${first#v}" = "$GITHUB_REF_NAME" ]; then title="$GITHUB_REF_NAME"; fi
-            tail -n +2 <<< "$message" > notes.md
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
-              --title "$title" --notes-file notes.md
+          tag="${INPUT_RELEASE:-$GITHUB_REF_NAME}"
+          message=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .commit.message)
+          first=$(head -n 1 <<< "$message" | sed 's/^#* *//')
+          title="$tag, $first"
+          if [ "v${first#v}" = "$tag" ]; then title="$tag"; fi
+          tail -n +2 <<< "$message" > notes.md
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "$title" --notes-file notes.md
           else
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "$title" --notes-file notes.md
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_RELEASE: ${{ inputs.release }}

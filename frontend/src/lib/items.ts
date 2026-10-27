@@ -529,8 +529,30 @@ function noticeStatus(
       }
 }
 
-/** A Remind me on Monitored, dated by the release it is for. */
-export function reminderItem(entry: Reminder, to: string, library: Library | null): Item {
+/**
+ * A film's reminders waiting with no date in the region are one row, with no release type: no
+ * date tells its releases apart.
+ */
+export function oneUndated(rows: Reminder[]): Reminder[] {
+  const undated = (r: Reminder) => r.kind === 'movie' && !r.date && r.status === 'waiting'
+  const count = new Map<number, number>()
+  for (const r of rows.filter(undated)) count.set(r.tmdb_id, (count.get(r.tmdb_id) ?? 0) + 1)
+  const seen = new Set<number>()
+  return rows.flatMap((r) => {
+    if (!undated(r) || count.get(r.tmdb_id) === 1) return [r]
+    if (seen.has(r.tmdb_id)) return []
+    seen.add(r.tmdb_id)
+    return [{ ...r, release_type: '' }]
+  })
+}
+
+/** A Remind me on Monitored, dated by the release it is for. A film's undated in the region. */
+export function reminderItem(
+  entry: Reminder,
+  to: string,
+  library: Library | null,
+  region: string,
+): Item {
   return {
     key: `reminder:${entry.id}`,
     to,
@@ -538,7 +560,9 @@ export function reminderItem(entry: Reminder, to: string, library: Library | nul
     shape: 'cover',
     library,
     title: entry.title,
-    meta: calendarDay(entry.date) ?? 'No date',
+    meta:
+      calendarDay(entry.date) ??
+      (entry.kind === 'movie' && region ? `No date in ${region}` : 'No date'),
     ...reminderTag(entry),
     status: reminderStatus(entry),
     countdown: {

@@ -34,6 +34,7 @@ import {
   api,
 } from '@/lib/api'
 import { useLibrary } from '@/lib/arr'
+import { useSettings } from '@/lib/categories'
 import { asView, usePageControls } from '@/lib/controls'
 import {
   type Item,
@@ -46,6 +47,7 @@ import {
   foundReminderItem,
   monitoredComicItem,
   monitoredGameItem,
+  oneUndated,
   reminderItem,
 } from '@/lib/items'
 import { withParam } from '@/lib/params'
@@ -63,26 +65,25 @@ type PageOf = {
   metaLabel: string
   foundMetaLabel?: string
   clearFound: () => Promise<void>
-  entries: (rows: unknown[], openAt: OpenAt, inLibrary: InLibrary) => Entry[]
+  entries: (rows: unknown[], openAt: OpenAt, inLibrary: InLibrary, region: string) => Entry[]
 }
 
 /** A cleared row is hidden here only. The rest of the app still shows it as found. A row from a
  * favourite carries its star. */
 function page<T extends { cleared_at: string | null; favourite: string | null }>(
   options: Omit<PageOf, 'entries'> & {
-    entry: (row: T, openAt: OpenAt, inLibrary: InLibrary) => Entry
+    entry: (row: T, openAt: OpenAt, inLibrary: InLibrary, region: string) => Entry
+    merge?: (rows: T[]) => T[]
   },
 ): PageOf {
-  const { entry, ...rest } = options
+  const { entry, merge = (rows) => rows, ...rest } = options
   return {
     ...rest,
-    entries: (rows, openAt, inLibrary) =>
-      (rows as T[])
-        .filter((row) => !row.cleared_at)
-        .map((row) => {
-          const made = entry(row, openAt, inLibrary)
-          return { ...made, item: { ...made.item, favourite: row.favourite } }
-        }),
+    entries: (rows, openAt, inLibrary, region) =>
+      merge((rows as T[]).filter((row) => !row.cleared_at)).map((row) => {
+        const made = entry(row, openAt, inLibrary, region)
+        return { ...made, item: { ...made.item, favourite: row.favourite } }
+      }),
   }
 }
 
@@ -120,13 +121,15 @@ const PAGE: Record<Category, PageOf> = {
     metaLabel: 'Release',
     foundMetaLabel: 'Release',
     clearFound: api.clearSentReminders,
-    entry: (row, openAt, inLibrary) => ({
+    merge: oneUndated,
+    entry: (row, openAt, inLibrary, region) => ({
       state: REMINDER_STATE[row.status],
       item: {
         ...(row.status === 'sent' ? foundReminderItem : reminderItem)(
           row,
           openAt('title', `${row.kind}-${row.tmdb_id}`),
           inLibrary(`${row.kind}-${row.tmdb_id}`),
+          region,
         ),
         menu: <ScreenMenu kind={row.kind} id={row.tmdb_id} />,
       },
@@ -162,11 +165,12 @@ export function Monitored() {
   const only = categories.find((c) => c.key === controls.values.type)?.key ?? null
   const openAt = (key: string, id: string | number) => withParam(params, key, id)
   const inLibrary = useLibrary()
+  const region = useSettings().data?.tmdb_region ?? ''
 
   const byState = Object.fromEntries(
     categories.map((c, i) => [
       c.key,
-      c.entries((lists[i]?.data as unknown[]) ?? [], openAt, inLibrary),
+      c.entries((lists[i]?.data as unknown[]) ?? [], openAt, inLibrary, region),
     ]),
   ) as Record<Category, Entry[]>
   const counts = Object.fromEntries(

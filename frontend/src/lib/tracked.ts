@@ -26,6 +26,7 @@ import {
   comicOpens,
   comicTag,
   monitoredGameTags,
+  oneUndated,
   reminderKindTag,
 } from '@/lib/items'
 import { localDay, monthStart } from '@/lib/utils'
@@ -84,8 +85,9 @@ function query<T>(
   queryKey: string[],
   queryFn: () => Promise<T[]>,
   track: (row: T) => Watched,
+  merge: (rows: T[]) => T[] = (rows) => rows,
 ): Category['query'] {
-  return { queryKey, queryFn, select: (rows) => (rows as T[]).map(track) }
+  return { queryKey, queryFn, select: (rows) => merge(rows as T[]).map(track) }
 }
 
 /** A release timestamp as the calendar day it names, which IGDB states in UTC. */
@@ -189,7 +191,7 @@ function tracked(key: CategoryKey, query: Category['query']): Category {
 export const TRACKED: Category[] = [
   tracked('games', query(['monitored'], api.monitored, game)),
   tracked('comics', query(['comics-monitored'], api.monitoredComics, comic)),
-  tracked('screens', query(['screen-reminders'], api.reminders, reminder)),
+  tracked('screens', query(['screen-reminders'], api.reminders, reminder, oneUndated)),
   tracked('books', query(['book-reminders'], api.bookReminders, bookReminder)),
 ]
 

@@ -151,11 +151,7 @@ function Body({
           art={cover}
           shape="cover"
           title={comic.title}
-          meta={[
-            data?.name,
-            comic.publisher,
-            out ? `Out ${calendarDay(out)}` : null,
-          ]}
+          meta={[data?.name, comic.publisher, out ? `Out ${calendarDay(out)}` : null]}
         >
           {!readable ? null : data ? (
             <Facts>

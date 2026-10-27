@@ -47,13 +47,16 @@ export function useComicMonitor(done?: () => void) {
     void queryClient.invalidateQueries({ queryKey: ['comics-monitored'] })
   }
   const start = useMutation({
-    mutationFn: ({ comic, week }: { comic: Comic; week: string }) => api.monitorComic(comic, week),
+    mutationFn: ({ comic, week, suwayomi }: { comic: Comic; week: string; suwayomi?: boolean }) =>
+      api.monitorComic(comic, week, suwayomi),
     onSuccess: (series) => {
       settled((rows) => [...rows.filter((row) => row.id !== series.id), series])
       toast.success(
         series.status !== 'monitored'
           ? `${series.series} is in your library`
-          : `Monitoring ${series.series}`,
+          : series.suwayomi
+            ? `Waiting for ${series.series} on Suwayomi`
+            : `Monitoring ${series.series}`,
       )
     },
     onError: failed('Could not monitor'),

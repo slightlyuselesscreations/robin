@@ -169,6 +169,9 @@ CREATE TABLE IF NOT EXISTS comics (
     url         TEXT    NOT NULL,
     cover       TEXT,
     status      TEXT    NOT NULL CHECK (status IN ('monitored', 'added')),
+    -- 1 when it was added to Suwayomi, which alone announces its issues once it lists them, and
+    -- 0 when it is monitored in Robin alone, announced from Metron.
+    suwayomi    INTEGER NOT NULL DEFAULT 0,
     suwayomi_id INTEGER,
     -- Issues on the source when the series was added. Zero means it was found before its first.
     issues      INTEGER,

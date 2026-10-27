@@ -372,6 +372,8 @@ export type MonitoredComic = {
   cover: string | null
   /** `tracking` while Suwayomi holds it, which announces each issue it lists. */
   status: 'monitored' | 'added' | 'tracking'
+  /** 1 when added to Suwayomi, which alone announces its issues, 0 when Robin alone monitors it. */
+  suwayomi: number
   suwayomi_id: number | null
   /** Issues on the source when the series was added. Zero means none was out yet. */
   issues: number | null
@@ -1055,10 +1057,15 @@ export const api = {
     request<ComicDetail>(
       `/api/comics/issue/${comic.id}${comic.modified ? `?modified=${encodeURIComponent(comic.modified)}` : ''}`,
     ),
-  monitorComic: ({ id, title, url, publisher, cover, series_id }: Comic, week: string) =>
+  /** `suwayomi` adds it to Suwayomi as well, which then alone announces its issues. */
+  monitorComic: (
+    { id, title, url, publisher, cover, series_id, year }: Comic,
+    week: string,
+    suwayomi = false,
+  ) =>
     request<MonitoredComic>('/api/comics/monitored', {
       method: 'POST',
-      body: JSON.stringify({ id, title, url, publisher, cover, series_id, week }),
+      body: JSON.stringify({ id, title, url, publisher, cover, series_id, week, year, suwayomi }),
     }),
   comic: (id: string) => request<Comic>(`/api/comics/comic/${id}`),
   comicIssues: (week?: string) =>

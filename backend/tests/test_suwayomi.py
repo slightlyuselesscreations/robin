@@ -62,6 +62,8 @@ def suwayomi_stub(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         "downloads": [],
         "removed": [],
         "library": [],
+        # What Suwayomi already has from the source in its own database.
+        "known": [],
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -89,6 +91,11 @@ def suwayomi_stub(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             done = {"clientMutationId": None}
             queued = {"enqueueChapterDownloads": done, "startDownloader": done}
             return httpx.Response(200, json={"data": queued})
+        if "includesInsensitive" in body["query"]:
+            assert variables["source"] == SOURCE
+            term = variables["title"].casefold()
+            found = [m for m in state["known"] if term in m["title"].casefold()]
+            return httpx.Response(200, json={"data": {"mangas": {"nodes": found}}})
         if "mangas(condition" in body["query"]:
             assert variables["source"] == SOURCE
             return httpx.Response(200, json={"data": {"mangas": {"nodes": state["library"]}}})
@@ -125,6 +132,7 @@ async def test_a_series_is_added_as_soon_as_the_source_lists_it(
         "publisher": "Marvel Comics",
         "cover": "https://s3.test/large-8870001.jpg",
         "week": "2026-10-07",
+        "suwayomi": True,
     }
 
     # Not on the source yet, so it waits.
@@ -146,7 +154,7 @@ async def test_a_series_is_added_as_soon_as_the_source_lists_it(
     assert notice["url"].startswith("ntfys://ntfy.test/comics?")
     assert notice["title"] == "Midnight X-Men is in your library"
     assert "click=https%3A%2F%2Fsuwayomi.test%2Fmanga%2F1954" in notice["url"]
-    assert "no issue is out yet" in notice["body"]
+    assert notice["body"] == "No issue yet"
 
     [row] = (await client.get("/api/comics/monitored")).json()
     assert (row["status"], row["suwayomi_id"], row["issues"]) == ("tracking", 1954, 0)
@@ -177,7 +185,13 @@ async def test_the_issue_count_is_taken_when_the_series_is_added(
         },
     )
     suwayomi_stub["chapters"] = [4100, 4101]
-    first = {"id": "2", "title": "Midnight X-Men #1", "url": "https://x.test", "week": "2026-10-07"}
+    first = {
+        "id": "2",
+        "title": "Midnight X-Men #1",
+        "url": "https://x.test",
+        "week": "2026-10-07",
+        "suwayomi": True,
+    }
     added = (await client.post("/api/comics/monitored", json=first)).json()
     assert (added["status"], added["issues"]) == ("tracking", 2)
     assert suwayomi_stub["downloads"] == [[4100, 4101]], "every issue downloads at once"
@@ -387,3 +401,115 @@ async def test_any_issue_opens_in_suwayomi_while_the_source_carries_its_run(
 
     older: dict[str, str | int] = {"series": "Midnight X-Men", "year": 2027}
     assert (await client.get("/api/comics/on-suwayomi", params=older)).json() is None
+
+
+async def test_what_suwayomi_already_knows_answers_without_searching_the_source(
+    client: AsyncClient, suwayomi_stub: dict[str, Any]
+) -> None:
+    await suwayomi_on(client)
+    suwayomi_stub["known"] = [manga(1097, "Lost Fantasy (2025-)")]
+    asked: dict[str, str | int] = {"series": "Lost Fantasy", "year": 2025}
+    found = (await client.get("/api/comics/on-suwayomi", params=asked)).json()
+    assert found["id"] == 1097
+    assert suwayomi_stub["searches"] == []
+
+
+async def test_a_waiting_series_suwayomi_knows_is_added_on_the_next_library_pass(
+    client: AsyncClient, suwayomi_stub: dict[str, Any], delivered: list[dict[str, Any]]
+) -> None:
+    await suwayomi_on(client)
+    suwayomi_stub["listed"] = False
+    first = {
+        "id": "2",
+        "title": "Midnight X-Men #1",
+        "url": "https://x.test",
+        "week": "2026-10-07",
+        "suwayomi": True,
+    }
+    assert (await client.post("/api/comics/monitored", json=first)).json()["status"] == "monitored"
+    suwayomi_stub["searches"] = []
+    suwayomi_stub["known"] = [manga(1954, "Midnight X-Men (2026-)")]
+    await suwayomi.sync_library()
+    assert suwayomi_stub["added"] == [1954]
+    assert suwayomi_stub["searches"] == [], "the source is not searched"
+    assert delivered[-1]["title"] == "Midnight X-Men is in your library"
+
+
+async def test_a_page_reads_the_library_again_at_most_once_a_minute(
+    client: AsyncClient, suwayomi_stub: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await suwayomi_on(client)
+    monkeypatch.setattr(suwayomi, "_page_synced", 0.0)
+    suwayomi_stub["library"] = [shelved(209, "Corpse Knight (2026-)", 6)]
+    [row] = (await client.get("/api/comics/monitored")).json()
+    assert (row["series"], row["status"]) == ("Corpse Knight", "tracking")
+
+    suwayomi_stub["library"] = []
+    assert len((await client.get("/api/comics/monitored")).json()) == 1, "not again so soon"
+
+
+async def test_monitoring_an_issue_of_a_series_the_library_holds_tracks_it_once_unannounced(
+    client: AsyncClient, suwayomi_stub: dict[str, Any], delivered: list[dict[str, Any]]
+) -> None:
+    await suwayomi_on(client)
+    suwayomi_stub["library"] = [shelved(1954, "Midnight X-Men (2026-)", 1)]
+    await suwayomi.sync_library()
+    suwayomi_stub["known"] = [manga(1954, "Midnight X-Men (2026-)", True)]
+
+    first = {
+        "id": "2",
+        "title": "Midnight X-Men #1",
+        "url": "https://metron.cloud/issue/2/",
+        "series_id": 100,
+        "week": "2026-10-07",
+    }
+    monitored = (await client.post("/api/comics/monitored", json=first)).json()
+    assert (monitored["status"], monitored["issue_id"], monitored["series_id"]) == (
+        "tracking",
+        "2",
+        100,
+    )
+    [row] = (await client.get("/api/comics/monitored")).json()
+    assert row["suwayomi_id"] == 1954
+    assert suwayomi_stub["added"] == []
+    assert delivered == [], "the user put it in the library, nothing to announce"
+
+
+async def test_a_waiting_series_already_in_the_library_is_linked_unannounced(
+    client: AsyncClient, suwayomi_stub: dict[str, Any], delivered: list[dict[str, Any]]
+) -> None:
+    first = {"id": "2", "title": "Midnight X-Men #1", "url": "https://x.test", "week": "2026-10-07"}
+    await client.post("/api/comics/monitored", json=first)
+    await suwayomi_on(client)
+    suwayomi_stub["known"] = [manga(1954, "Midnight X-Men (2026-)", True)]
+    suwayomi_stub["library"] = [shelved(1954, "Midnight X-Men (2026-)", 1)]
+    await suwayomi.sync_library()
+    [row] = (await client.get("/api/comics/monitored")).json()
+    assert (row["status"], row["suwayomi_id"], row["issue_id"]) == ("tracking", 1954, "2")
+    assert delivered == []
+
+
+async def test_monitor_alone_never_touches_suwayomi(
+    client: AsyncClient, suwayomi_stub: dict[str, Any], delivered: list[dict[str, Any]]
+) -> None:
+    await suwayomi_on(client)
+    suwayomi_stub["known"] = [manga(1954, "Midnight X-Men (2026-)")]
+    first = {"id": "2", "title": "Midnight X-Men #1", "url": "https://x.test", "week": "2026-10-07"}
+    monitored = (await client.post("/api/comics/monitored", json=first)).json()
+    assert (monitored["status"], monitored["suwayomi"]) == ("monitored", 0)
+    await suwayomi.sync_library()
+    assert await suwayomi.add_found_series() == 0
+    assert (suwayomi_stub["added"], suwayomi_stub["searches"], delivered) == ([], [], [])
+
+    # Added to Suwayomi from there, the same series is looked for and added.
+    again = (await client.post("/api/comics/monitored", json={**first, "suwayomi": True})).json()
+    assert (again["id"], again["status"], again["suwayomi"]) == (monitored["id"], "tracking", 1)
+    assert suwayomi_stub["added"] == [1954]
+
+
+async def test_adding_to_suwayomi_needs_suwayomi(
+    client: AsyncClient, suwayomi_stub: dict[str, Any]
+) -> None:
+    first = {"id": "2", "title": "Midnight X-Men #1", "url": "https://x.test", "week": "2026-10-07"}
+    added = await client.post("/api/comics/monitored", json={**first, "suwayomi": True})
+    assert added.status_code == 409

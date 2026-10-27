@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
@@ -9,7 +10,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from robin import auth, db, notify, upstream
+from robin import auth, db, notify, suwayomi, upstream
 from robin.config import env
 from robin.main import app
 
@@ -26,6 +27,14 @@ def quick_metron(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(
         upstream.LIMITS, "metron", dataclasses.replace(upstream.LIMITS["metron"], per=0.0)
     )
+
+
+@pytest.fixture(autouse=True)
+def no_page_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A page reads the Suwayomi library only in the tests that ask for it, each with a lock of
+    its own, since a pass a test leaves running holds the last one."""
+    monkeypatch.setattr(suwayomi, "_page_synced", float("inf"))
+    monkeypatch.setattr(suwayomi, "_syncing", asyncio.Lock())
 
 
 @pytest.fixture(autouse=True)

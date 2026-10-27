@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from typing import Any
 
 from robin import db, filters, notify, upstream
@@ -54,6 +55,15 @@ mutation($id: Int!) {
 REMOVE = """
 mutation($id: Int!) {
   updateManga(input: {id: $id, patch: {inLibrary: false}}) { manga { id inLibrary } }
+}"""
+
+# Series of one source Suwayomi already has in its own database, from any search or browse
+# before, by a part of their title. Answered at once, unlike a search of the source.
+KNOWN = """
+query($source: LongString!, $title: String!) {
+  mangas(condition: {sourceId: $source}, filter: {title: {includesInsensitive: $title}}) {
+    nodes { id title inLibrary thumbnailUrl }
+  }
 }"""
 
 # The library from one source, with how many issues Suwayomi lists for each, read from its own
@@ -281,16 +291,57 @@ def link(comics: list[dict[str, Any]]) -> None:
             db.link_comic_series(int(row["id"]), int(comic["series_id"]), comic["publisher"])
 
 
+# One library pass at a time, so a page and the sync loop never announce an issue twice.
+_syncing = asyncio.Lock()
+# When a page last had the library read, how often it may, and how long it waits for it.
+_page_synced = 0.0
+PAGE_SYNC = 60.0
+PAGE_WAIT = 2.0
+_behind: set[asyncio.Task[int]] = set()
+
+
+async def sync_for_page(settings: db.Settings) -> None:
+    """Read the library again before a page answers, at most once every `PAGE_SYNC` seconds and
+    waiting `PAGE_WAIT` at most, so what changed in Suwayomi shows at once. A pass that takes
+    longer goes on behind the answer."""
+    global _page_synced
+    if not settings.suwayomi_ready or time.monotonic() - _page_synced < PAGE_SYNC:
+        return
+    _page_synced = time.monotonic()
+    task = asyncio.create_task(_quiet_sync())
+    _behind.add(task)
+    task.add_done_callback(_behind.discard)
+    await asyncio.wait({task}, timeout=PAGE_WAIT)
+
+
+async def _quiet_sync() -> int:
+    try:
+        return await sync_library()
+    except upstream.UpstreamError as exc:
+        log.warning("suwayomi: library pass failed: %s", exc)
+        return 0
+
+
 async def sync_library() -> int:
     """Follow the library from the configured source. Returns how many notices were sent.
 
     Each series in it Robin has no row for is monitored, and each one Robin tracks that is no
     longer in it is forgotten. An issue Suwayomi lists past the count kept is announced on the
-    comics topic, once. Runs on every sync.
+    comics topic, once. A waiting series Suwayomi already knows is added at once, rather than at
+    the hourly search of the source. Runs on every sync, and for a page, `sync_for_page`.
     """
+    async with _syncing:
+        return await _sync_library()
+
+
+async def _sync_library() -> int:
     settings = db.get_settings()
     if not settings.suwayomi_ready:
         return 0
+    for waiting in db.waiting("comics"):
+        match = await find(settings, waiting["series"], int(waiting["year"]), live=False)
+        if match and (waiting["suwayomi"] or match["inLibrary"]):
+            await add_if_found(settings, waiting, match)
     data = await gql(settings, LIBRARY, {"source": settings.suwayomi_source_id})
     shelf = {int(m["id"]): _series(settings, m) for m in data["mangas"]["nodes"]}
     channel = settings.notices("comics")
@@ -334,9 +385,21 @@ async def source_name(settings: db.Settings) -> str:
     return str(data["source"]["displayName"])
 
 
-async def find(settings: db.Settings, series: str, year: int) -> dict[str, Any] | None:
+async def find(
+    settings: db.Settings, series: str, year: int, *, live: bool = True
+) -> dict[str, Any] | None:
+    """The run on the source, from what Suwayomi already knows of it, then, while `live`, from a
+    search of the source itself, which takes seconds."""
+    source = settings.suwayomi_source_id
     for query in queries(series):
-        data = await gql(settings, SEARCH, {"source": settings.suwayomi_source_id, "query": query})
+        data = await gql(settings, KNOWN, {"source": source, "title": query})
+        match = pick(data["mangas"]["nodes"], series, year)
+        if match:
+            return match
+    if not live:
+        return None
+    for query in queries(series):
+        data = await gql(settings, SEARCH, {"source": source, "query": query})
         match = pick(data["fetchSourceManga"]["mangas"], series, year)
         if match:
             return match
@@ -351,7 +414,11 @@ OFF_SOURCE_TTL = 3600
 
 async def on_source(settings: db.Settings, series: str, year: int) -> dict[str, Any] | None:
     """The series on the source, by name and the year its run began, for any issue to open in
-    Suwayomi, None when the source does not carry it. Nothing is added to the library."""
+    Suwayomi, None when the source does not carry it. Nothing is added to the library. What
+    Suwayomi already knows answers at once, and only a search of the source is kept."""
+    known = await find(settings, series, year, live=False)
+    if known:
+        return _series(settings, known)
 
     async def read() -> dict[str, Any] | None:
         found = await find(settings, series, year)
@@ -365,15 +432,17 @@ async def on_source(settings: db.Settings, series: str, year: int) -> dict[str, 
 
 
 async def add_found_series() -> int:
-    """Add each waiting series the source now carries. Returns how many were added.
+    """Add each series waiting for Suwayomi the source now carries. Returns how many were
+    added.
 
-    Runs on the hourly loop. Only series still waiting are looked for.
+    Runs on the hourly loop. Only series added to Suwayomi and still waiting are looked for, a
+    series monitored in Robin alone never is.
     """
     settings = db.get_settings()
     if not settings.suwayomi_ready:
         return 0
     added = 0
-    for comic in db.waiting("comics"):
+    for comic in [c for c in db.waiting("comics") if c["suwayomi"]]:
         try:
             if await add_if_found(settings, comic):
                 added += 1
@@ -382,12 +451,30 @@ async def add_found_series() -> int:
     return added
 
 
-async def add_if_found(settings: db.Settings, comic: dict[str, Any]) -> bool:
-    match = await find(settings, comic["series"], int(comic["year"]))
+async def add_if_found(
+    settings: db.Settings, comic: dict[str, Any], match: dict[str, Any] | None = None
+) -> bool:
+    """Add a waiting series to the library once the source lists it, and announce it. One the
+    library already holds is only linked: a row already tracking it takes this one in, and
+    nothing is announced, since the user put it there."""
+    match = match or await find(settings, comic["series"], int(comic["year"]))
     if not match:
         return False
-    if not match["inLibrary"]:
-        await gql(settings, ADD, {"id": match["id"]})
+    held = next(
+        (
+            r
+            for r in db.rows("comics")
+            if r["suwayomi_id"] == int(match["id"]) and r["id"] != comic["id"]
+        ),
+        None,
+    )
+    if held is not None:
+        db.merge_comic(int(held["id"]), comic)
+        return True
+    if match["inLibrary"]:
+        db.mark_comic_added(int(comic["id"]), int(match["id"]), None)
+        return True
+    await gql(settings, ADD, {"id": match["id"]})
     # Loads whatever issues the source has now, so the count says whether the series was
     # found before its first issue. Suwayomi keeps the list current from here.
     count = await download_all(settings, int(match["id"]))
@@ -396,17 +483,12 @@ async def add_if_found(settings: db.Settings, comic: dict[str, Any]) -> bool:
 
     channel = settings.notices("comics")
     if channel is not None:
-        issues = (
-            f"{count} issue{'' if count == 1 else 's'} to read"
-            if count
-            else "no issue is out yet, Suwayomi fetches them as they come"
-        )
         try:
             await notify.send(
                 settings,
                 channel,
                 title=f"{comic['series']} is in your library",
-                message=f"{match['title']}, {issues}.",
+                message=f"{count} issue{'' if count == 1 else 's'}" if count else "No issue yet",
                 tags="books",
                 click=f"{settings.suwayomi_url}/manga/{match['id']}",
                 attach=comic["cover"],

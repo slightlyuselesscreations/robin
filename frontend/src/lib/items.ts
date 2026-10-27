@@ -151,7 +151,7 @@ export function gameStatus(status: MonitorStatus, entry?: MonitoredGame | null):
 export function comicStatus(entry: MonitoredComic): Status {
   const state = COMIC_STATE[entry.status]
   return state === 'waiting'
-    ? { state, detail: ['Not on the source yet, looked for hourly'] }
+    ? { state, detail: [entry.suwayomi ? 'Not on the source yet, looked for hourly' : null] }
     : {
         state,
         detail: [

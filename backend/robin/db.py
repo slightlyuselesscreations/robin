@@ -101,6 +101,8 @@ def init_db() -> None:
         # Every table the schema declares, so a column added to a new one reaches every install.
         for table in re.findall(r"CREATE TABLE IF NOT EXISTS (\w+) \(", schema):
             _add_missing_columns(c, schema, table)
+        # A series in Suwayomi before Monitor and Add to Suwayomi were apart was added there.
+        c.execute("UPDATE comics SET suwayomi = 1 WHERE suwayomi_id IS NOT NULL AND suwayomi = 0")
         _keep_to_hide(c)
         _ntfy_to_destinations(c)
         _unify_page_defaults(c)
@@ -1593,30 +1595,35 @@ def monitor_comic(
     url: str,
     cover: str | None,
     series_id: int | None = None,
+    suwayomi: bool = False,
 ) -> dict[str, Any]:
     """Monitoring a series already monitored, from this issue or any other, returns the
-    existing row."""
+    existing row, now wanting Suwayomi when `suwayomi` asks for it."""
     with conn() as c:
+        row = None
         if series_id is not None:
             row = c.execute("SELECT * FROM comics WHERE series_id = ?", (series_id,)).fetchone()
-            if row is not None:
-                return dict(row)
-        c.execute(
-            "INSERT INTO comics (issue_id, series_id, title, series, year, publisher, url, cover,"
-            " status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'monitored', ?)"
-            " ON CONFLICT (issue_id) DO NOTHING",
-            (issue_id, series_id, title, series, year, publisher, url, cover, now()),
-        )
-        row = c.execute("SELECT * FROM comics WHERE issue_id = ?", (issue_id,)).fetchone()
+        if row is None:
+            c.execute(
+                "INSERT INTO comics (issue_id, series_id, title, series, year, publisher, url,"
+                " cover, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'monitored', ?)"
+                " ON CONFLICT (issue_id) DO NOTHING",
+                (issue_id, series_id, title, series, year, publisher, url, cover, now()),
+            )
+            row = c.execute("SELECT * FROM comics WHERE issue_id = ?", (issue_id,)).fetchone()
+        if suwayomi:
+            c.execute("UPDATE comics SET suwayomi = 1 WHERE id = ?", (row["id"],))
+            row = c.execute("SELECT * FROM comics WHERE id = ?", (row["id"],)).fetchone()
     return dict(row)
 
 
-def mark_comic_added(comic_id: int, suwayomi_id: int, issues: int) -> None:
-    """`issues` is how many the source had when the series was added, never updated after."""
+def mark_comic_added(comic_id: int, suwayomi_id: int, issues: int | None) -> None:
+    """`issues` is how many the source had when the series was added, never updated after,
+    None for one the library already held, which the next library pass counts."""
     with conn() as c:
         c.execute(
-            "UPDATE comics SET status = 'added', suwayomi_id = ?, issues = ?, chapters = ?,"
-            " added_at = ? WHERE id = ?",
+            "UPDATE comics SET status = 'added', suwayomi = 1, suwayomi_id = ?, issues = ?,"
+            " chapters = ?, added_at = ? WHERE id = ?",
             (suwayomi_id, issues, issues, now(), comic_id),
         )
 
@@ -1636,8 +1643,9 @@ def take_in_comic(
     stamp = now()
     with conn() as c:
         c.execute(
-            "INSERT INTO comics (issue_id, title, series, year, url, cover, status, suwayomi_id,"
-            " issues, chapters, created_at) VALUES (?, ?, ?, ?, ?, ?, 'added', ?, ?, ?, ?)"
+            "INSERT INTO comics (issue_id, title, series, year, url, cover, status, suwayomi,"
+            " suwayomi_id, issues, chapters, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, 'added', 1, ?, ?, ?, ?)"
             " ON CONFLICT (issue_id) DO NOTHING",
             (
                 f"suwayomi-{suwayomi_id}",
@@ -1650,6 +1658,26 @@ def take_in_comic(
                 chapters,
                 chapters,
                 stamp,
+            ),
+        )
+
+
+def merge_comic(keep_id: int, comic: dict[str, Any]) -> None:
+    """Fold a series monitored from an issue into the row already tracking its Suwayomi run,
+    which then opens on that issue and knows its Metron series."""
+    with conn() as c:
+        c.execute("DELETE FROM comics WHERE id = ?", (comic["id"],))
+        c.execute(
+            "UPDATE comics SET issue_id = ?, title = ?, url = ?,"
+            " series_id = COALESCE(series_id, ?), publisher = COALESCE(NULLIF(publisher, ''), ?)"
+            " WHERE id = ?",
+            (
+                comic["issue_id"],
+                comic["title"],
+                comic["url"],
+                comic["series_id"],
+                comic["publisher"],
+                keep_id,
             ),
         )
 

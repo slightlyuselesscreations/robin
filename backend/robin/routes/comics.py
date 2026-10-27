@@ -100,6 +100,10 @@ class MonitorComic(BaseModel):
     cover: str | None = None
     series_id: int | None = None
     week: date
+    # The year its series' run began, which names the run on Suwayomi, the week's when unknown.
+    year: int | None = None
+    # Added to Suwayomi as well, which then alone announces its issues.
+    suwayomi: bool = False
 
 
 @router.get("/comics/search")
@@ -172,13 +176,16 @@ async def _out_of_library(settings: db.Settings, row: dict[str, Any]) -> None:
         await suwayomi.remove_from_library(settings, int(row["suwayomi_id"]))
 
 
-tracked_routes(router, "/comics/monitored", "comics", _series_shown, _out_of_library)
+tracked_routes(
+    router, "/comics/monitored", "comics", _series_shown, _out_of_library, suwayomi.sync_for_page
+)
 
 
 @router.post("/comics/monitored")
 async def monitor_comic(body: MonitorComic) -> dict[str, Any]:
-    """Monitor the series an issue is of. Each new issue is announced, and with Suwayomi set
-    it is looked for there at once, then on every hourly pass."""
+    """Monitor the series an issue is of, each new issue announced from Metron, or with
+    `suwayomi` add it to Suwayomi, looked for there at once and on every pass until the source
+    lists it, each issue announced once Suwayomi lists it."""
     issue = {
         "id": body.id,
         "title": body.title,
@@ -187,6 +194,10 @@ async def monitor_comic(body: MonitorComic) -> dict[str, Any]:
         "cover": body.cover,
         "series_id": body.series_id,
         "date": body.week.isoformat(),
+        "year": body.year,
     }
     settings = db.get_settings()
-    return reported(settings, await favourites.monitor_series(settings, issue))
+    if body.suwayomi and not settings.suwayomi_ready:
+        raise HTTPException(status_code=409, detail="Set up Suwayomi in Settings, Comics.")
+    found = await favourites.monitor_series(settings, issue, to_suwayomi=body.suwayomi)
+    return reported(settings, found)

@@ -398,26 +398,37 @@ async def _monitor(settings: db.Settings, category: Category, release: dict[str,
     return made
 
 
-async def monitor_series(settings: db.Settings, issue: dict[str, Any]) -> dict[str, Any]:
-    """Monitor the series an issue is of: each new issue is announced, and with Suwayomi set it
-    is added there once the source lists it, looked for at once and on every hourly pass."""
+async def monitor_series(
+    settings: db.Settings, issue: dict[str, Any], *, to_suwayomi: bool = False
+) -> dict[str, Any]:
+    """Monitor the series an issue is of, each new issue announced from Metron. With
+    `to_suwayomi` it is added to Suwayomi instead, looked for at once and on every pass until
+    the source lists it, and Suwayomi alone announces its issues. Either way, a series the
+    library already holds is tracked from there, so its issues are never announced twice."""
     series = suwayomi.series_title(issue["title"])
     comic = db.monitor_comic(
         issue_id=issue["id"],
         title=issue["title"],
         series=series,
-        year=int((issue.get("date") or db.month_start().isoformat())[:4]),
+        year=int(issue.get("year") or (issue.get("date") or db.month_start().isoformat())[:4]),
         publisher=issue.get("publisher") or "",
         url=issue["url"],
         cover=issue.get("cover"),
         series_id=issue.get("series_id"),
+        suwayomi=to_suwayomi,
     )
     if comic["status"] == "monitored" and settings.suwayomi_ready:
         try:
-            await suwayomi.add_if_found(settings, comic)
+            match = await suwayomi.find(
+                settings, comic["series"], int(comic["year"]), live=to_suwayomi
+            )
+            if match and (to_suwayomi or match["inLibrary"]):
+                await suwayomi.add_if_found(settings, comic, match)
         except suwayomi.SuwayomiError as exc:
             log.warning("suwayomi: %s failed: %s", comic["series"], exc)
-    return db.row("comics", int(comic["id"])) or comic
+    # A row already tracking its run in Suwayomi takes it in, by its issue.
+    kept = next((r for r in db.rows("comics") if r["issue_id"] == comic["issue_id"]), None)
+    return kept or comic
 
 
 async def notify_series(now: datetime | None = None) -> int:
@@ -432,8 +443,9 @@ async def notify_series(now: datetime | None = None) -> int:
         return 0
     sent = 0
     for row in db.rows("comics"):
-        # Suwayomi announces each issue of a series it holds as it lists it, `sync_library`.
-        if not row["series_id"] or db.comic_tracked(settings, row):
+        # Suwayomi announces each issue of a series added to it once it lists it,
+        # `sync_library`, and nothing announces one while the source does not list it yet.
+        if not row["series_id"] or row["suwayomi"] or db.comic_tracked(settings, row):
             continue
         try:
             issues = await coming(settings, "comics", "series", [int(row["series_id"])])

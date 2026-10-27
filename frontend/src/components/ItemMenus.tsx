@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  LibraryBig,
   Star,
   StarOff,
   TriangleAlert,
@@ -94,11 +95,15 @@ export function GameMenu({
   )
 }
 
-/** Monitor the series a #1 starts, or stop monitoring it. `week` is unknown once monitored. */
+/**
+ * Monitor the series an issue is of, add it to Suwayomi, or stop monitoring it. `week` is
+ * unknown once monitored.
+ */
 export function ComicMenu({ comic, week }: { comic: Comic; week?: string }) {
   const monitored = useQuery({ queryKey: ['comics-monitored'], queryFn: api.monitoredComics })
   const monitor = comicMonitorOf(monitored.data, comic)
   const { start, stop } = useComicMonitor()
+  const suwayomi = useSettings().data?.suwayomi_ready ?? false
   return (
     <>
       {monitor ? (
@@ -113,6 +118,15 @@ export function ComicMenu({ comic, week }: { comic: Comic; week?: string }) {
         >
           <Eye />
           Monitor
+        </ContextMenuItem>
+      ) : null}
+      {suwayomi && week && !monitor?.suwayomi ? (
+        <ContextMenuItem
+          disabled={!monitored.isSuccess}
+          onSelect={() => start.mutate({ comic, week, suwayomi: true })}
+        >
+          <LibraryBig />
+          Add to Suwayomi
         </ContextMenuItem>
       ) : null}
       <OutItem href={comic.url}>{fromMetron(comic) ? 'Metron' : 'League of Comic Geeks'}</OutItem>

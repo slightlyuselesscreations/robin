@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { TriangleAlert } from 'lucide-react'
+import { LibraryBig, TriangleAlert } from 'lucide-react'
 
 import {
   Actions,
@@ -21,6 +21,8 @@ import {
 } from '@/components/MediaDialog'
 import { FlightNotice } from '@/components/MediaCard'
 import { OpenInSuwayomi } from '@/components/SeriesDialog'
+import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { Tip } from '@/components/Page'
 import {
   COMIC_STATE,
@@ -271,6 +273,21 @@ function Body({
               onMonitor={() => out && start.mutate({ comic, week: out })}
               onStop={() => monitor && stop.mutate(monitor)}
             />
+            {settings.data?.suwayomi_ready && !monitor?.suwayomi && out ? (
+              <Button
+                variant="ghost"
+                onClick={() => start.mutate({ comic, week: out, suwayomi: true })}
+                disabled={busy}
+                className="gap-2 text-ink-dim hover:text-accent"
+              >
+                {start.isPending ? (
+                  <Spinner className="size-4" />
+                ) : (
+                  <LibraryBig className="size-4" />
+                )}
+                Add to Suwayomi
+              </Button>
+            ) : null}
             {suwayomiHref ? <OpenInSuwayomi href={suwayomiHref} /> : null}
             <CountdownButton
               target={{

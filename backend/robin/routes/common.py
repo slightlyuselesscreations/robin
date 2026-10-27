@@ -54,19 +54,23 @@ def tracked_routes(
     table: db.Table,
     shown: Callable[[db.Settings, dict[str, Any]], Awaitable[bool]] | None = None,
     forget: Callable[[db.Settings, dict[str, Any]], Awaitable[None]] | None = None,
+    before: Callable[[db.Settings], Awaitable[None]] | None = None,
 ) -> None:
     """What every category lists on Monitored: its rows but those Settings hides, `shown`,
     Clear notified, and removing one.
 
     Removing one makes Robin forget it, and runs `forget` first, which undoes what Robin handed
-    off. Without it, anything handed off stays where it went.
+    off. Without it, anything handed off stays where it went. `before` runs ahead of the list,
+    to bring the rows up to date with where they were handed off.
     """
 
     async def listed() -> list[dict[str, Any]]:
+        settings = db.get_settings()
+        if before is not None:
+            await before(settings)
         rows = db.rows(table)
         if shown is None:
             return rows
-        settings = db.get_settings()
         keep = await asyncio.gather(*(shown(settings, row) for row in rows))
         return [row for row, kept in zip(rows, keep, strict=True) if kept]
 

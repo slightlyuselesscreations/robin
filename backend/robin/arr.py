@@ -141,8 +141,13 @@ async def monitor_library() -> int:
     settings = db.get_settings()
     db.drop_undated_library_shows()
     done = db.library_monitored() | {f"{r['kind']}-{r['tmdb_id']}" for r in db.rows("reminders")}
+    # A title monitored from a favourite before Robin kept which: one a library holds is held
+    # there, since a favourite's releases may never list it again.
+    unnamed = db.unnamed_favourite_origins("screens")
     added = 0
     for held in await holdings(settings):
+        if held["key"] in unnamed:
+            db.set_origin("screens", held["key"], {"kind": held["app"]})
         if not held["ahead"] or held["key"] in done:
             continue
         kind, tmdb_id = KIND[held["app"]], int(held["key"].split("-")[1])

@@ -9,6 +9,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import {
+  LIBRARY_NAME,
   type Origin,
   SERVICES,
   STATE_LABEL,
@@ -61,6 +62,40 @@ function Kind({ category, tag }: { category: CategoryKey; tag?: string | null })
 }
 
 /**
+ * The start of every Home row: cover, the state glyph or its empty place, so titles line up in
+ * every panel whether or not the item is monitored, then the title, its star, and its category
+ * and tag under it.
+ */
+function Lead({
+  item,
+}: {
+  item: Pick<
+    Tracked,
+    'image' | 'shape' | 'state' | 'library' | 'title' | 'favourite' | 'category' | 'tag'
+  >
+}) {
+  return (
+    <>
+      <Artwork image={item.image} shape={item.shape} className="w-8 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          {item.state ? (
+            <StateIcon state={item.state} />
+          ) : (
+            <span aria-hidden className="size-3.5 shrink-0" />
+          )}
+          <TitleText library={item.library} className="text-sm font-medium text-ink">
+            {item.title}
+          </TitleText>
+          {item.favourite ? <FavouriteStar name={item.favourite} /> : null}
+        </div>
+        <Kind category={item.category} tag={item.tag} />
+      </div>
+    </>
+  )
+}
+
+/**
  * One line of every Home list, the same in each panel: cover, glyph, title with its category
  * and tag under it, then the release date, left out where the list already names the day, and
  * the days to it.
@@ -73,17 +108,7 @@ function Row({ item, dated = true }: { item: Tracked; dated?: boolean }) {
         to={item.to}
         className="group flex items-center gap-3 px-4 py-2 transition-colors hover:bg-raised/50 focus-visible:outline-accent"
       >
-        <Artwork image={item.image} shape={item.shape} className="w-8 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            {item.state ? <StateIcon state={item.state} /> : null}
-            <TitleText library={item.library} className="text-sm font-medium text-ink">
-              {item.title}
-            </TitleText>
-            {item.favourite ? <FavouriteStar name={item.favourite} /> : null}
-          </div>
-          <Kind category={item.category} tag={item.tag} />
-        </div>
+        <Lead item={item} />
         {dated && item.releaseText ? (
           <Clip className="hidden max-w-[40%] font-mono text-2xs text-ink-faint sm:block">
             {item.releaseText}
@@ -125,12 +150,12 @@ function PanelLoading() {
   )
 }
 
-/** Why something is monitored, grouped as the Status panel counts it. */
-const ORIGIN_GROUPS: { label: string; of: (origin: Origin | null) => boolean }[] = [
-  { label: 'by you', of: (o) => o === null },
-  { label: 'from favourites', of: (o) => o?.kind === 'favourite' },
-  { label: 'from libraries', of: (o) => o !== null && o.kind !== 'favourite' },
-]
+/** Why something is monitored, as the Status panel counts it and an item's dialog names it. */
+function originGroup(origin: Origin | null): string {
+  if (origin === null) return 'from you'
+  if (origin.kind === 'favourite') return 'from favourites'
+  return `from ${origin.kind === 'suwayomi' ? 'Suwayomi' : LIBRARY_NAME[origin.kind]}`
+}
 
 /** One tile per category shown, counting what comes out this month and what is tracked now. */
 export function StatusPanel() {
@@ -153,10 +178,10 @@ export function StatusPanel() {
     )
   }
   // Why each is monitored, shown once anything is there for more than one reason.
-  const origins = ORIGIN_GROUPS.map(({ label, of }) => ({
-    label,
-    n: items.filter((i) => of(i.origin)).length,
-  })).filter((o) => o.n > 0)
+  const counted = new Map<string, number>()
+  for (const i of items)
+    counted.set(originGroup(i.origin), (counted.get(originGroup(i.origin)) ?? 0) + 1)
+  const origins = [...counted].map(([label, n]) => ({ label, n }))
   const tiles = categories.map(({ key, to, icon, label }) => ({
     to,
     icon,
@@ -267,6 +292,8 @@ function timer(day: string, now: number): string {
 export function CountdownsPanel() {
   const queryClient = useQueryClient()
   const countdowns = useCountdowns()
+  // Each countdown as Home tracks it, for the same glyph, star and library colour as any row.
+  const tracked = new Map(useUpcoming().map((i) => [i.to, i]))
   const now = useNow()
   const remove = useMutation({
     mutationFn: api.removeCountdown,
@@ -292,15 +319,18 @@ export function CountdownsPanel() {
             to={`?${c.target}`}
             className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-4 focus-visible:outline-accent"
           >
-            <Artwork
-              image={c.image}
-              shape={c.category === 'games' ? 'poster' : 'cover'}
-              className="w-8 shrink-0"
+            <Lead
+              item={{
+                image: c.image,
+                shape: c.category === 'games' ? 'poster' : 'cover',
+                state: tracked.get(`?${c.target}`)?.state ?? null,
+                library: tracked.get(`?${c.target}`)?.library ?? null,
+                title: c.title,
+                favourite: tracked.get(`?${c.target}`)?.favourite ?? null,
+                category: c.category,
+                tag: c.tag ?? null,
+              }}
             />
-            <div className="min-w-0 flex-1">
-              <Clip className="text-sm font-medium text-ink">{c.title}</Clip>
-              <Kind category={c.category} tag={c.tag} />
-            </div>
             <span className="shrink-0 font-mono text-xs font-medium text-accent tabular-nums">
               {timer(c.date, now)}
             </span>

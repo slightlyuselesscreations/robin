@@ -461,10 +461,10 @@ export function MediaFooter({
 function OriginNote({ origin }: { origin: Origin | null }) {
   const [params] = useSearchParams()
   const favourites = useFavourites()
-  if (origin === null) return <span className="text-ink-faint">· by you</span>
+  if (origin === null) return <span className="text-ink-faint">· monitored from you</span>
   if (origin.kind !== 'favourite') {
     const app = origin.kind === 'suwayomi' ? 'Suwayomi' : LIBRARY_NAME[origin.kind]
-    return <span className="text-ink-faint">· via {app}</span>
+    return <span className="text-ink-faint">· monitored from {app}</span>
   }
   const star = favourites.data?.find((f) => f.id === origin.id)
   const name = (
@@ -477,7 +477,7 @@ function OriginNote({ origin }: { origin: Origin | null }) {
   for (const key of ITEM_PARAMS) next.delete(key)
   return (
     <span className="flex min-w-0 items-center gap-1 text-ink-faint">
-      · from
+      · monitored from
       {star ? (
         <Link
           to={withParam(next, 'favourite', favouriteParam({ ...star, id: star.source_id }))}

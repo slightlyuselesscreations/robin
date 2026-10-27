@@ -1,6 +1,7 @@
 """A database from an older Robin is brought up to the schema file, or left as it was."""
 
 import sqlite3
+from datetime import date, timedelta
 
 import pytest
 
@@ -64,3 +65,11 @@ def test_every_table_gains_the_columns_the_schema_added() -> None:
     db.init_db()
     made = db.add_countdown("screens", "title=movie-1", "Dune", None, "Cinema", "2026-12-16")
     assert made["tag"] == "Cinema"
+
+
+def test_no_migration_outlives_its_window() -> None:
+    """A migration past its window is put to the owner: an install that skipped every release
+    since loses what it changes, so dropping it is their call."""
+    for shipped, migrate in db.MIGRATIONS:
+        due = date.fromisoformat(shipped) + timedelta(days=db.MIGRATION_DAYS)
+        assert date.today() < due, f"{migrate.__name__} shipped {shipped}: ask the owner to drop it"

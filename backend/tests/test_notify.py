@@ -269,44 +269,6 @@ async def test_setup_waits_on_notifications(client: AsyncClient) -> None:
     assert (await client.put("/api/auth/setup", json={"step": "games"})).status_code == 204
 
 
-def test_ntfy_and_its_topics_become_a_destination() -> None:
-    with db.conn() as c:
-        for column in (
-            "ntfy_url",
-            "ntfy_topic",
-            "ntfy_token",
-            "comics_topic",
-            "screen_topic",
-            "books_topic",
-        ):
-            c.execute(f"ALTER TABLE settings ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
-        c.execute(
-            "UPDATE settings SET ntfy_url = 'https://ntfy.test', ntfy_topic = 'robin',"
-            " ntfy_token = 'tk_x', comics_topic = 'comics'"
-        )
-    db.init_db()
-
-    settings = db.get_settings()
-    [ntfy] = settings.notify_destinations
-    assert ntfy["values"] == {"server": "https://ntfy.test", "topic": "robin", "token": "tk_x"}
-    assert ntfy["places"] == {"comics": "comics"}
-    assert (settings.games_notify, settings.comics_notify, settings.books_notify) == (
-        True,
-        True,
-        False,
-    )
-    with db.conn() as c:
-        assert "ntfy_url" not in db._columns(c, "settings")
-
-
-def test_an_install_without_ntfy_opens_setup_at_notifications() -> None:
-    db.update_account(password_hash="x")
-    with db.conn() as c:
-        c.execute("ALTER TABLE settings ADD COLUMN ntfy_url TEXT NOT NULL DEFAULT ''")
-    db.init_db()
-    assert db.get_account()["setup_step"] == db.SETUP_NOTIFICATIONS
-
-
 async def test_every_change_of_a_games_date_is_told_once(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

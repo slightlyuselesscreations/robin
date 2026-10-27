@@ -2914,9 +2914,6 @@ const NOTIFICATIONS: Step = {
   Body: DestinationsPanel,
 }
 
-// Where an install that finished setup without a destination opens, that step alone.
-const NOTIFICATIONS_ONLY = 'notifications-only'
-
 const SETUP: Step[] = [
   {
     slug: 'restore',
@@ -2964,15 +2961,14 @@ export function Setup({ step }: { step: string }) {
   // Which way the last move went, so the step slides in from that side.
   const [back, setBack] = useState(false)
   const [proven, setProven] = useState(false)
-  const steps = step === NOTIFICATIONS_ONLY ? [NOTIFICATIONS] : SETUP
   const at = Math.max(
     0,
-    steps.findIndex((s) => s.slug === step),
+    SETUP.findIndex((s) => s.slug === step),
   )
-  const current = steps[at]
-  const last = at === steps.length - 1
+  const current = SETUP[at]
+  const last = at === SETUP.length - 1
   // Short of a test that arrived, nothing past Notifications opens.
-  const gate = steps.indexOf(NOTIFICATIONS)
+  const gate = SETUP.indexOf(NOTIFICATIONS)
   const held = !proven && at <= gate
   const blocked = (to: number | null) => held && (to === null || to > gate)
   const go = useMutation({
@@ -2981,14 +2977,14 @@ export function Setup({ step }: { step: string }) {
       if (keep && stored && JSON.stringify(form) !== JSON.stringify(editable(stored))) {
         await api.saveSettings(form)
       }
-      await api.setupStep(to === null ? null : steps[to].slug)
+      await api.setupStep(to === null ? null : SETUP[to].slug)
     },
     onSuccess: (_, { to, keep }) => {
       if (!keep && settings.data) setForm(editable(settings.data))
       void client.invalidateQueries({ predicate: (query) => query.queryKey[0] !== 'me' })
       client.setQueryData<Me>(
         ['me'],
-        (me) => me && { ...me, setup: to === null ? null : steps[to].slug },
+        (me) => me && { ...me, setup: to === null ? null : SETUP[to].slug },
       )
     },
     onError: (error: unknown) =>
@@ -3009,11 +3005,8 @@ export function Setup({ step }: { step: string }) {
         <span className="text-2xl font-semibold tracking-tight text-ink">Robin</span>
       </header>
 
-      <nav
-        className={cn('mt-8 flex flex-wrap justify-center gap-1', steps.length === 1 && 'hidden')}
-        aria-label="Setup"
-      >
-        {steps.map(({ slug, label, icon: Icon }, i) => (
+      <nav className="mt-8 flex flex-wrap justify-center gap-1" aria-label="Setup">
+        {SETUP.map(({ slug, label, icon: Icon }, i) => (
           <button
             key={slug}
             type="button"
@@ -3028,14 +3021,12 @@ export function Setup({ step }: { step: string }) {
           </button>
         ))}
       </nav>
-      {steps.length > 1 ? (
-        <div className="mt-4 h-0.5 w-full max-w-md overflow-hidden rounded-full bg-line">
-          <div
-            className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
-            style={{ width: `${(at / (steps.length - 1)) * 100}%` }}
-          />
-        </div>
-      ) : null}
+      <div className="mt-4 h-0.5 w-full max-w-md overflow-hidden rounded-full bg-line">
+        <div
+          className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
+          style={{ width: `${(at / (SETUP.length - 1)) * 100}%` }}
+        />
+      </div>
 
       <main className="mt-10 flex w-full justify-center">
         <StepFrame key={current.slug} title={current.title} width={current.width} back={back}>

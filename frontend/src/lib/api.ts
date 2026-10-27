@@ -330,7 +330,6 @@ export type ComicDetail = {
   /** The issue's own title, where it has one. */
   name: string | null
   synopsis: string
-  cover_date: string | null
   /** Names by role, in the order Metron lists them. */
   creators: Record<string, string[]>
   /** The same with the id each opens as a favourite by. */

@@ -53,6 +53,9 @@ At its core, `Robin` tracks entertainment media across various formats while hel
 
 Simply put, `Robin` monitors upcoming release dates, tracks changes automatically, and notifies you when something you care about is about to drop.
 
+
+Please expect rapid development, and breaking changes. Stick on `:latest` to be safer.
+
 ## Features
 
 ### How categories work

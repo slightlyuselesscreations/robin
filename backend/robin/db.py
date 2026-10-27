@@ -93,263 +93,15 @@ def init_db() -> None:
         # Readers no longer wait on a writer, so a page never waits on the hourly loop.
         c.execute("PRAGMA journal_mode = WAL")
         c.executescript(schema)
-        # Before the columns change: what Comic Vine named, moved aside for the carry-over.
-        _comicvine_aside(c)
-        # Comics gained favourites, with the publisher, then characters and universes.
-        for table in ("favourites", "maker_filters"):
-            _rebuild(c, schema, table, "'universe'")
         # Every table the schema declares, so a column added to a new one reaches every install.
         for table in re.findall(r"CREATE TABLE IF NOT EXISTS (\w+) \(", schema):
             _add_missing_columns(c, schema, table)
-        # A series in Suwayomi before Monitor and Add to Suwayomi were apart was added there.
-        c.execute("UPDATE comics SET suwayomi = 1 WHERE suwayomi_id IS NOT NULL AND suwayomi = 0")
-        _keep_to_hide(c)
-        _ntfy_to_destinations(c)
-        _unify_page_defaults(c)
         # After the column is added, which an older database has not had.
-        c.execute("DROP INDEX IF EXISTS comics_volume")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS comics_series ON comics (series_id)")
-        _drop_columns(c, "settings", ("comicvine_token",))
-        # Makers were only ever hidden before they could be shown too.
-        if c.execute("SELECT 1 FROM sqlite_master WHERE name = 'hidden_makers'").fetchone():
-            c.execute(
-                "INSERT OR IGNORE INTO maker_filters"
-                " (mode, category, kind, source_id, source_ids_json, name, created_at)"
-                " SELECT 'hide', category, kind, source_id, source_ids_json, name, created_at"
-                " FROM hidden_makers"
-            )
-            c.execute("DROP TABLE hidden_makers")
+        for _, migrate in MIGRATIONS:
+            migrate(c, schema)
         c.execute("INSERT OR IGNORE INTO settings (id, updated_at) VALUES (1, ?)", (now(),))
         c.execute("INSERT OR IGNORE INTO account (id, updated_at) VALUES (1, ?)", (now(),))
-
-
-# ---------------------------------------------------------------- Comic Vine carry-over
-# Comics read Comic Vine before Metron. On the first start of a Robin that reads Metron, every
-# Comic Vine id Robin holds is moved aside here, out of where Metron ids live, and
-# `robin/carry.py` puts back the Metron id of each, once a Metron key is set. Nothing matches by
-# a Comic Vine id after it. This and `robin/carry.py` go once every install has had that start.
-
-COMICVINE_CARRY = "comicvine_carry"
-
-# The marks of what was announced from Comic Vine carried over: from this month on, or for a
-# digest, which marks no date, written in the last two weeks.
-CARRY_SEEN_DAYS = 14
-
-
-def _comicvine_aside(c: sqlite3.Connection) -> None:
-    """Move every Comic Vine id aside into `COMICVINE_CARRY`, each with what it belonged to,
-    and drop what was only kept from Comic Vine. Runs while the settings still have the Comic
-    Vine key's column, so once."""
-    if "comicvine_token" not in _columns(c, "settings"):
-        return
-    c.execute(
-        f"CREATE TABLE IF NOT EXISTS {COMICVINE_CARRY} (id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        " what TEXT NOT NULL, row_id INTEGER, cv_id INTEGER NOT NULL, data_json TEXT)"
-    )
-
-    def aside(what: str, row_id: int | None, cv_id: Any, data: Any = None) -> None:
-        if str(cv_id).isdigit():
-            c.execute(
-                f"INSERT INTO {COMICVINE_CARRY} (what, row_id, cv_id, data_json)"
-                " VALUES (?, ?, ?, ?)",
-                (what, row_id, int(cv_id), json.dumps(data)),
-            )
-
-    for table in ("favourites", "maker_filters"):
-        for row in c.execute(f"SELECT id, source_id FROM {table} WHERE category = 'comics'"):
-            aside(table, row["id"], row["source_id"])
-    settings = c.execute("SELECT * FROM settings WHERE id = 1").fetchone()
-    if settings is not None and "comics_digest_publishers_json" in settings.keys():  # noqa: SIM118, a Row tests values
-        for publisher in json.loads(settings["comics_digest_publishers_json"] or "[]"):
-            aside("digest", None, publisher.get("id"), publisher)
-        c.execute("UPDATE settings SET comics_digest_publishers_json = '[]' WHERE id = 1")
-    if "volume_id" in _columns(c, "comics"):
-        for row in c.execute("SELECT id, volume_id, issue_id FROM comics WHERE volume_id"):
-            aside("series", row["id"], row["volume_id"])
-            aside("issue", row["id"], row["issue_id"])
-        c.execute("UPDATE comics SET volume_id = NULL")
-        c.execute("DROP INDEX IF EXISTS comics_volume")
-        c.execute("ALTER TABLE comics RENAME COLUMN volume_id TO series_id")
-    for row in c.execute(
-        "SELECT title FROM favourite_monitored WHERE category = 'comics' AND title LIKE 'volume-%'"
-    ):
-        aside("monitored", None, row["title"].removeprefix("volume-"))
-    c.execute("DELETE FROM favourite_monitored WHERE category = 'comics'")
-    start = month_start().isoformat()
-    for row in c.execute("SELECT * FROM favourite_notices WHERE category = 'comics'"):
-        if (row["notified_for"] or "")[:10] >= start:
-            aside("notice", None, row["title"], {"notified_for": row["notified_for"]})
-    c.execute("DELETE FROM favourite_notices WHERE category = 'comics'")
-    for row in c.execute("SELECT id, target FROM countdowns WHERE target LIKE 'comic=%'"):
-        aside("countdown", row["id"], row["target"].removeprefix("comic="))
-    recent = (datetime.now(UTC) + timedelta(days=90 - CARRY_SEEN_DAYS)).isoformat()
-    for row in c.execute(
-        "SELECT key, value_json, expires_at FROM cache WHERE key GLOB 'comics:seen:[0-9]*'"
-    ):
-        marker = str(json.loads(row["value_json"]))
-        if marker[:10] >= start or (marker.startswith("*") and row["expires_at"] >= recent):
-            aside("seen", None, row["key"].removeprefix("comics:seen:"), marker)
-    for row in c.execute("SELECT key, value_json FROM cache WHERE key GLOB 'comics:dated:[0-9]*'"):
-        dated = str(json.loads(row["value_json"]))
-        if dated[:10] >= start:
-            aside("dated", None, row["key"].removeprefix("comics:dated:"), dated)
-    # Everything else kept from Comic Vine goes now, its answers and its pause.
-    for pattern in (
-        "comics:*",
-        "favourite:coming:*:comics:*",
-        "limit:v1:comicvine",
-        "health:*",
-    ):
-        c.execute("DELETE FROM cache WHERE key GLOB ?", (pattern,))
-    log.info("moved Comic Vine ids aside for the carry-over to Metron")
-
-
-def comicvine_pending() -> bool:
-    """Whether the carry-over from Comic Vine has ids still to put back."""
-    with conn() as c:
-        if not c.execute(
-            "SELECT 1 FROM sqlite_master WHERE name = ?", (COMICVINE_CARRY,)
-        ).fetchone():
-            return False
-        return c.execute(f"SELECT 1 FROM {COMICVINE_CARRY} LIMIT 1").fetchone() is not None
-
-
-def _keep_to_hide(c: sqlite3.Connection) -> None:
-    """Settings that listed what to keep now list what to hide: whatever a list did not keep,
-    of every value it could have. Languages are read from TMDB's list in the cache, and stay
-    unhidden without it. Genres start over, a book or a film carries several, so keeping one
-    never meant hiding the rest."""
-    if "tmdb_languages_json" not in _columns(c, "settings"):
-        return
-    row = c.execute("SELECT * FROM settings WHERE id = 1").fetchone()
-    if row is not None:
-        known = c.execute(
-            "SELECT value_json FROM cache WHERE key LIKE 'tmdb:v1:%:languages' LIMIT 1"
-        ).fetchone()
-        languages = [lang["iso_639_1"] for lang in json.loads(known[0])] if known else []
-        # The list that kept, the one that hides now, and every value either could hold.
-        lists: list[tuple[str, str, list[Any]]] = [
-            ("tmdb_languages", "tmdb_hidden_languages", languages),
-            ("tmdb_release_types", "tmdb_hidden_release_types", ["theatrical", "digital"]),
-            ("books_literary_types", "books_hidden_literary_types", [1, 2]),
-            ("books_categories", "books_hidden_categories", list(range(1, 11))),
-            (
-                "games_platforms",
-                "games_hidden_platforms",
-                ["pc", "playstation", "xbox", "nintendo"],
-            ),
-        ]
-        columns = row.keys()
-        for old, new, values in lists:
-            if f"{old}_json" not in columns:
-                continue
-            kept = json.loads(row[f"{old}_json"] or "[]")
-            hidden = [v for v in values if v not in kept] if kept else []
-            c.execute(f"UPDATE settings SET {new}_json = ? WHERE id = 1", (json.dumps(hidden),))
-    _drop_columns(
-        c,
-        "settings",
-        (
-            "tmdb_languages_json",
-            "tmdb_movie_genres_json",
-            "tmdb_tv_genres_json",
-            "tmdb_release_types_json",
-            "books_literary_types_json",
-            "books_categories_json",
-            "books_genres_json",
-            "games_platforms_json",
-        ),
-    )
-
-
-# Page controls saved under the names they had before every grid shared one set: the new name,
-# and old values that read differently now.
-_RENAMED_CONTROLS: dict[str, tuple[str, dict[str, str]]] = {
-    "kind": ("type", {}),
-    "sort": ("order", {}),
-    "order": ("order", {"popular": "popularity"}),
-    "lang": ("language", {}),
-    "from": ("type", {"tomorrow": "upcoming", "january": "out"}),
-}
-
-# Page controls no grid has any more: how far ahead it looks is the same on every grid.
-_DROPPED_CONTROLS = ("days", "window")
-
-
-def _unify_page_defaults(c: sqlite3.Connection) -> None:
-    """Saved page controls take the names every grid shares, Type and Order, a control no grid
-    has any more is dropped, and so are the picks that brought back what Settings hides, `kept`
-    and `any`, a filter only ever narrowing what Settings leaves."""
-    row = c.execute("SELECT page_defaults_json FROM settings WHERE id = 1").fetchone()
-    if row is None:
-        return
-    defaults: dict[str, dict[str, str]] = json.loads(row[0] or "{}")
-    unified: dict[str, dict[str, str]] = {}
-    for page, controls in defaults.items():
-        kept: dict[str, str] = {}
-        for name, value in controls.items():
-            new, values = _RENAMED_CONTROLS.get(name, (name, {}))
-            if name in _DROPPED_CONTROLS or value in ("kept", "any") or new in kept:
-                continue
-            kept[new] = values.get(value, value)
-        if kept:
-            unified[page] = kept
-    if unified != defaults:
-        c.execute("UPDATE settings SET page_defaults_json = ? WHERE id = 1", (json.dumps(unified),))
-
-
-def _ntfy_to_destinations(c: sqlite3.Connection) -> None:
-    """ntfy and a topic per category become an ntfy destination, each category's topic its
-    place there and an empty one its switch off. An install that had no ntfy opens setup at
-    its notifications step alone, `SETUP_NOTIFICATIONS`."""
-    if "ntfy_url" not in _columns(c, "settings"):
-        return
-    row = c.execute("SELECT * FROM settings WHERE id = 1").fetchone()
-    if row is not None and row["ntfy_url"]:
-        topics: dict[str, str] = {
-            "games": row["ntfy_topic"],
-            "comics": row["comics_topic"],
-            "screens": row["screen_topic"],
-            "books": row["books_topic"],
-        }
-        topic = next((t for t in topics.values() if t), "robin")
-        values = {"server": row["ntfy_url"], "topic": topic}
-        if row["ntfy_token"]:
-            values["token"] = row["ntfy_token"]
-        places = {cat: t for cat, t in topics.items() if t and t != topic}
-        ntfy = {"id": "ntfy", "service": "ntfy", "values": values, "places": places}
-        c.execute(
-            "UPDATE settings SET notify_destinations_json = ?, games_notify = ?,"
-            " comics_notify = ?, screen_notify = ?, books_notify = ? WHERE id = 1",
-            (json.dumps([ntfy]), *(int(bool(t)) for t in topics.values())),
-        )
-    else:
-        c.execute(
-            "UPDATE account SET setup_step = ? WHERE id = 1 AND setup_step IS NULL"
-            " AND password_hash IS NOT NULL",
-            (SETUP_NOTIFICATIONS,),
-        )
-    _drop_columns(
-        c,
-        "settings",
-        (
-            "ntfy_url",
-            "ntfy_topic",
-            "ntfy_token",
-            "ntfy_priority",
-            "comics_priority",
-            "comics_topic",
-            "screen_topic",
-            "screen_priority",
-            "books_topic",
-            "books_priority",
-        ),
-    )
-
-
-# The setup step an install that finished setup without a notification destination opens at,
-# alone.
-SETUP_NOTIFICATIONS = "notifications-only"
 
 
 def _private(path: Path) -> None:
@@ -429,13 +181,25 @@ def _recreate(c: sqlite3.Connection, schema: str, table: str) -> None:
     log.info("made %s again for its new columns", table)
 
 
-def _drop_columns(c: sqlite3.Connection, table: str, names: tuple[str, ...]) -> None:
-    """Remove columns the schema file no longer declares."""
-    existing = _columns(c, table)
-    for name in names:
-        if name in existing:
-            c.execute(f"ALTER TABLE {table} DROP COLUMN {name}")
-            log.info("dropped column %s.%s", table, name)
+def _universes(c: sqlite3.Connection, schema: str) -> None:
+    """Favourites and maker filters take comic characters and universes."""
+    for table in ("favourites", "maker_filters"):
+        _rebuild(c, schema, table, "'universe'")
+
+
+def _suwayomi_added(c: sqlite3.Connection, schema: str) -> None:
+    """A series in Suwayomi before Monitor and Add to Suwayomi were apart was added there."""
+    c.execute("UPDATE comics SET suwayomi = 1 WHERE suwayomi_id IS NOT NULL AND suwayomi = 0")
+
+
+# One-time changes to what an older Robin stored, each with the day its release shipped. Every
+# start runs them all after the columns are added, and each does nothing once done.
+# `test_migrations` fails `MIGRATION_DAYS` after that day, and the owner decides whether it goes.
+MIGRATIONS: tuple[tuple[str, Callable[[sqlite3.Connection, str], None]], ...] = (
+    ("2026-10-27", _universes),
+    ("2026-10-27", _suwayomi_added),
+)
+MIGRATION_DAYS = 90
 
 
 # ---------------------------------------------------------------- settings

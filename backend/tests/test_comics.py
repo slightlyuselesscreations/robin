@@ -45,7 +45,6 @@ def test_an_issue_is_read_for_everything_the_listing_lacks() -> None:
         "url": "https://metron.cloud/issue/1/",
         "modified": "2026-10-01T09:00:00-04:00",
         "synopsis": "A young Peter Parker is transformed & more.",
-        "cover_date": "2026-12-01",
         "story_arcs": ["Midnight"],
         "characters": [{"id": 2, "name": "Spider-Man"}],
         "teams": [],
@@ -266,7 +265,7 @@ async def test_an_issue_is_read_once_when_opened(
     first = await client.get("/api/comics/issue/1")
     again = await client.get("/api/comics/issue/1")
     assert first.json() == again.json()
-    assert first.json()["cover_date"] == "2026-12-01"
+    assert "cover_date" not in first.json(), "only the date it is on shelves"
     assert len(fake.asked) == 1
     listed = "/api/comics/issue/1?modified=2026-10-01T09:00:00-04:00"
     assert (await client.get(listed)).json()["synopsis"]

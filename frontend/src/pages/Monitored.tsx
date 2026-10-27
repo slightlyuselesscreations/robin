@@ -7,7 +7,6 @@ import { toast } from 'sonner'
 import { BookMenu, ComicMenu, GameMenu, ScreenMenu } from '@/components/ItemMenus'
 import { Items } from '@/components/MediaCard'
 import {
-  Control,
   Group,
   Notice,
   Options,
@@ -176,24 +175,22 @@ export function Monitored() {
   return (
     <Page>
       <PageHeader title="Monitored" icon={Eye}>
-        <Options controls={controls}>
+        <Segmented
+          label="Category"
+          options={[
+            { value: 'all', label: 'All', count: total },
+            ...categories.map((c) => ({
+              value: c.key,
+              label: c.label,
+              icon: c.icon,
+              count: counts[c.key],
+            })),
+          ]}
+          value={only ?? 'all'}
+          onChange={(type) => controls.set({ type })}
+        />
+        <Options controls={controls} header={['type']}>
           <ViewSwitch value={view} onChange={(next) => controls.set({ view: next })} />
-          <Control label="Category">
-            <Segmented
-              label="Category"
-              options={[
-                { value: 'all', label: 'All', count: total },
-                ...categories.map((c) => ({
-                  value: c.key,
-                  label: c.label,
-                  icon: c.icon,
-                  count: counts[c.key],
-                })),
-              ]}
-              value={only ?? 'all'}
-              onChange={(type) => controls.set({ type })}
-            />
-          </Control>
         </Options>
       </PageHeader>
 

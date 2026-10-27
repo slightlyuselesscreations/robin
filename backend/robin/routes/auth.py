@@ -151,9 +151,7 @@ def setup(body: SetupIn) -> None:
 
 
 # The setup steps up to and including notifications, open while no destination is set.
-BEFORE_NOTIFICATIONS = frozenset(
-    {"", "restore", "species", "notifications", db.SETUP_NOTIFICATIONS}
-)
+BEFORE_NOTIFICATIONS = frozenset({"", "restore", "species", "notifications"})
 
 
 @router.post("/login")

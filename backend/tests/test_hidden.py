@@ -134,18 +134,8 @@ def test_a_maker_always_shown_brings_back_what_a_filter_hides() -> None:
     assert tmdb._rescues(settings, "movie")
 
 
-def test_a_maker_moves_between_hidden_and_shown_and_was_hidden_before() -> None:
+def test_a_maker_moves_between_hidden_and_shown() -> None:
     db.filter_maker("hide", "games", "company", 7, "Studio", [7])
     db.filter_maker("show", "games", "company", 7, "Studio", [7])
     [maker] = db.maker_filters()
     assert maker["mode"] == "show", "one mode at a time"
-
-    with db.conn() as c:
-        c.execute("DELETE FROM maker_filters")
-        c.execute(
-            "CREATE TABLE hidden_makers (id INTEGER PRIMARY KEY, category TEXT, kind TEXT,"
-            " source_id INTEGER, source_ids_json TEXT, name TEXT, created_at TEXT)"
-        )
-        c.execute("INSERT INTO hidden_makers VALUES (1, 'games', 'company', 8, '[8]', 'Old', 'x')")
-    db.init_db()
-    assert [(m["mode"], m["source_id"]) for m in db.maker_filters()] == [("hide", 8)]

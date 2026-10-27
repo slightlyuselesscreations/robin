@@ -382,7 +382,6 @@ def parse_detail(issue: dict[str, Any] | None) -> dict[str, Any] | None:
         "url": f"{SITE}/issue/{issue['id']}/",
         "modified": issue.get("modified"),
         "synopsis": _text(issue.get("desc") or ""),
-        "cover_date": issue.get("cover_date"),
         "story_arcs": _names(issue.get("arcs")),
         "characters": _refs(issue.get("characters")),
         "teams": _names(issue.get("teams")),
@@ -510,13 +509,12 @@ async def notify_new_firsts(now: datetime | None = None) -> int:
     Runs on the hourly loop. Each #1 is in one digest only, so a later notice of the schedule
     sends again only for #1s Metron added since. An issue of the current week is still
     announced after it ships, until the week ends. Issues are marked only once the digest
-    went out, so a failure is retried on the next pass. Nothing is sent while the carry-over
-    from Comic Vine is still to run.
+    went out, so a failure is retried on the next pass.
     """
     settings = db.get_settings()
     channel = settings.notices("comics")
     window = notices.window(settings, "comics", now)
-    if channel is None or window is None or db.comicvine_pending():
+    if channel is None or window is None:
         return 0
 
     sent = 0

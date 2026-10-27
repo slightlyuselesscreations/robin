@@ -155,7 +155,6 @@ function Body({
             data?.name,
             comic.publisher,
             out ? `Out ${calendarDay(out)}` : null,
-            data?.cover_date ? `Cover date ${calendarDay(data.cover_date)}` : null,
           ]}
         >
           {!readable ? null : data ? (

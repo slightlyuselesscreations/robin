@@ -284,9 +284,6 @@ async def notify_favourites(now: datetime | None = None) -> int:
     settings = db.get_settings()
     sent = 0
     for category in KINDS:
-        # Comics waits for the carry-over from Comic Vine, its ids not yet Metron's.
-        if category == "comics" and db.comicvine_pending():
-            continue
         channel = settings.favourite_notices(category)
         window = notices.window(settings, category, now)
         if channel is None or window is None:
@@ -340,9 +337,6 @@ async def monitor_favourites() -> int:
     settings = db.get_settings()
     added = 0
     for category in KINDS:
-        # Comics waits for the carry-over from Comic Vine, its ids not yet Metron's.
-        if category == "comics" and db.comicvine_pending():
-            continue
         if not settings.favourites_monitor(category):
             continue
         stars = db.favourites(category)
@@ -439,7 +433,7 @@ async def notify_series(now: datetime | None = None) -> int:
     settings = db.get_settings()
     channel = settings.notices("comics")
     window = notices.window(settings, "comics", now)
-    if channel is None or window is None or db.comicvine_pending():
+    if channel is None or window is None:
         return 0
     sent = 0
     for row in db.rows("comics"):

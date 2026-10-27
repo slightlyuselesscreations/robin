@@ -4,7 +4,6 @@ import { useSearchParams } from 'react-router-dom'
 import { FavouriteMenu } from '@/components/ItemMenus'
 import { Items } from '@/components/MediaCard'
 import {
-  Control,
   Group,
   Notice,
   Options,
@@ -48,24 +47,22 @@ export function Favourites() {
   return (
     <Page>
       <PageHeader title="Favourites" icon={Star}>
-        <Options controls={controls}>
+        <Segmented
+          label="Category"
+          options={[
+            { value: 'all', label: 'All', count: favourites.data?.length ?? 0 },
+            ...categories.map((c) => ({
+              value: c,
+              label: CATEGORY[c].label,
+              icon: CATEGORY[c].icon,
+              count: of(c).length,
+            })),
+          ]}
+          value={only ?? 'all'}
+          onChange={(type) => controls.set({ type })}
+        />
+        <Options controls={controls} header={['type']}>
           <ViewSwitch value={view} onChange={(next) => controls.set({ view: next })} />
-          <Control label="Category">
-            <Segmented
-              label="Category"
-              options={[
-                { value: 'all', label: 'All', count: favourites.data?.length ?? 0 },
-                ...categories.map((c) => ({
-                  value: c,
-                  label: CATEGORY[c].label,
-                  icon: CATEGORY[c].icon,
-                  count: of(c).length,
-                })),
-              ]}
-              value={only ?? 'all'}
-              onChange={(type) => controls.set({ type })}
-            />
-          </Control>
         </Options>
       </PageHeader>
 

@@ -122,24 +122,6 @@ async def test_page_defaults_are_kept(client: AsyncClient) -> None:
     assert (await client.put("/api/settings", json={"page_defaults": bad})).status_code == 422
 
 
-def test_saved_page_controls_take_the_shared_names() -> None:
-    db.save_settings(
-        {
-            "page_defaults": {
-                "screens": {"kind": "tv", "days": "30", "sort": "popularity", "lang": "any"},
-                "games": {"from": "january", "platform": "kept"},
-                "monitored": {"type": "games"},
-            }
-        }
-    )
-    db.init_db()
-    assert db.get_settings().page_defaults == {
-        "screens": {"type": "tv", "order": "popularity"},
-        "games": {"type": "out"},
-        "monitored": {"type": "games"},
-    }
-
-
 async def test_health_reports_what_is_not_set_up(client: AsyncClient) -> None:
     body = (await client.get("/api/settings/health", params={"refresh": True})).json()
     assert body["suwayomi"] == {"state": "unset", "error": "", "until": None}
@@ -207,34 +189,6 @@ async def test_a_key_saved_before_its_address_stays(client: AsyncClient) -> None
     await client.put("/api/settings", json={"qbittorrent_api_key": "qbittorrent-key-1"})
     await client.put("/api/settings", json={"qbittorrent_url": "http://qbittorrent.lan:8080"})
     assert db.get_settings().qbittorrent_api_key == "qbittorrent-key-1"
-
-
-def test_what_settings_kept_becomes_what_they_hide() -> None:
-    with db.conn() as c:
-        for column, value in (
-            ("tmdb_languages_json", '["en"]'),
-            ("tmdb_movie_genres_json", "[28]"),
-            ("tmdb_release_types_json", '["digital"]'),
-            ("books_categories_json", "[1]"),
-            ("games_platforms_json", '["pc"]'),
-        ):
-            c.execute(f"ALTER TABLE settings ADD COLUMN {column} TEXT NOT NULL DEFAULT '[]'")
-            c.execute(f"UPDATE settings SET {column} = ? WHERE id = 1", (value,))
-        languages = '[{"iso_639_1": "en"}, {"iso_639_1": "es"}, {"iso_639_1": "ja"}]'
-        c.execute(
-            "INSERT INTO cache (key, value_json, expires_at) VALUES (?, ?, ?)",
-            ("tmdb:v1:en-US:languages", languages, "2000-01-01T00:00:00"),
-        )
-    db.init_db()
-    s = db.get_settings()
-    assert s.tmdb_hidden_languages == ["es", "ja"]
-    assert s.tmdb_hidden_release_types == ["theatrical"]
-    assert s.books_hidden_categories == list(range(2, 11))
-    assert s.games_hidden_platforms == ["playstation", "xbox", "nintendo"]
-    # Keeping one genre never meant hiding every other, so genres start over.
-    assert s.tmdb_hidden_movie_genres == []
-    with db.conn() as c:
-        assert "tmdb_languages_json" not in db._columns(c, "settings")
 
 
 def test_every_source_and_integration_is_checked() -> None:

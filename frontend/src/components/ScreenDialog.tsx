@@ -178,6 +178,7 @@ function Remind({ title }: { title: ScreenDetail }) {
         shown.length
           ? {
               state: REMINDER_STATE[shown[0].status],
+              origin: shown[0].origin,
               text: [
                 STATE_LABEL[REMINDER_STATE[shown[0].status]],
                 ...shown.map((r) => (r.release_type ? (tags.get(r.release_type) ?? '') : '')),

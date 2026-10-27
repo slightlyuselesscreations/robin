@@ -161,6 +161,7 @@ async def monitor_library() -> int:
         if not made:
             continue
         db.mark_library_monitored(held["key"])
+        db.set_origin("screens", held["key"], {"kind": held["app"]})
         log.info("arr: monitoring %s, held by %s", held["key"], NAMES[held["app"]])
         added += 1
     return added

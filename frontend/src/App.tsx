@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { ArrRemoveDialog } from '@/components/ArrRemoveDialog'
+import { FavouriteStopDialog } from '@/components/FavouriteStopDialog'
 import { BookDialog } from '@/components/BookDialog'
 import { AnyComicDialog } from '@/components/ComicDialog'
 import { AnySeriesDialog } from '@/components/SeriesDialog'
@@ -295,6 +296,7 @@ export default function App() {
               <PauseAlerts />
               <StaleAlerts />
               <ArrRemoveDialog />
+              <FavouriteStopDialog />
             </SetupGate>
             <Toaster position="bottom-right" />
           </BrowserRouter>

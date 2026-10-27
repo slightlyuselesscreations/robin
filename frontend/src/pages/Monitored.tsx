@@ -66,8 +66,9 @@ type PageOf = {
   entries: (rows: unknown[], openAt: OpenAt, inLibrary: InLibrary) => Entry[]
 }
 
-/** A cleared row is hidden here only. The rest of the app still shows it as found. */
-function page<T extends { cleared_at: string | null }>(
+/** A cleared row is hidden here only. The rest of the app still shows it as found. A row from a
+ * favourite carries its star. */
+function page<T extends { cleared_at: string | null; favourite: string | null }>(
   options: Omit<PageOf, 'entries'> & {
     entry: (row: T, openAt: OpenAt, inLibrary: InLibrary) => Entry
   },
@@ -76,7 +77,12 @@ function page<T extends { cleared_at: string | null }>(
   return {
     ...rest,
     entries: (rows, openAt, inLibrary) =>
-      (rows as T[]).filter((row) => !row.cleared_at).map((row) => entry(row, openAt, inLibrary)),
+      (rows as T[])
+        .filter((row) => !row.cleared_at)
+        .map((row) => {
+          const made = entry(row, openAt, inLibrary)
+          return { ...made, item: { ...made.item, favourite: row.favourite } }
+        }),
   }
 }
 

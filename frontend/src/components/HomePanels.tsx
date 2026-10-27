@@ -8,7 +8,15 @@ import { Clip, HealthWord, Notice, PanelBody, PanelEmpty, StateIcon, Tip } from 
 import { Calendar } from '@/components/ui/calendar'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
-import { SERVICES, STATE_LABEL, type Torrent, api, releaseSize, errorText } from '@/lib/api'
+import {
+  type Origin,
+  SERVICES,
+  STATE_LABEL,
+  type Torrent,
+  api,
+  releaseSize,
+  errorText,
+} from '@/lib/api'
 import { CATEGORY } from '@/lib/categories'
 import {
   type CategoryKey,
@@ -117,6 +125,13 @@ function PanelLoading() {
   )
 }
 
+/** Why something is monitored, grouped as the Status panel counts it. */
+const ORIGIN_GROUPS: { label: string; of: (origin: Origin | null) => boolean }[] = [
+  { label: 'by you', of: (o) => o === null },
+  { label: 'from favourites', of: (o) => o?.kind === 'favourite' },
+  { label: 'from libraries', of: (o) => o !== null && o.kind !== 'favourite' },
+]
+
 /** One tile per category shown, counting what comes out this month and what is tracked now. */
 export function StatusPanel() {
   const now = new Date()
@@ -137,6 +152,11 @@ export function StatusPanel() {
       <PanelEmpty>Nothing is set up yet. Each category appears once its source is set.</PanelEmpty>
     )
   }
+  // Why each is monitored, shown once anything is there for more than one reason.
+  const origins = ORIGIN_GROUPS.map(({ label, of }) => ({
+    label,
+    n: items.filter((i) => of(i.origin)).length,
+  })).filter((o) => o.n > 0)
   const tiles = categories.map(({ key, to, icon, label }) => ({
     to,
     icon,
@@ -149,28 +169,35 @@ export function StatusPanel() {
       .filter((c) => c.n > 0 || c.state === 'waiting' || c.state === 'found'),
   }))
   return (
-    <PanelBody className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(16rem,1fr))]">
-      {tiles.map(({ to, icon: Icon, title, counts }) => (
-        <Link
-          key={title}
-          to={to}
-          className="group @container flex items-center gap-4 rounded-md border border-line bg-base/40 px-4 py-3 transition-colors hover:border-line-strong"
-        >
-          <Icon className="size-4 shrink-0 text-ink-faint group-hover:text-accent" />
-          <span className="text-sm font-medium text-ink">{title}</span>
-          <span className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-1">
-            {counts.map((c) => (
-              <span key={c.state} className="flex items-center gap-1.5 text-xs text-ink-dim">
-                <StateIcon state={c.state} />
-                <span className="text-lg font-semibold text-ink">{c.n}</span>
-                <span className={cn('hidden', LABELLED[counts.length])}>
-                  {STATE_LABEL[c.state]}
+    <PanelBody className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(16rem,1fr))]">
+        {tiles.map(({ to, icon: Icon, title, counts }) => (
+          <Link
+            key={title}
+            to={to}
+            className="group @container flex items-center gap-4 rounded-md border border-line bg-base/40 px-4 py-3 transition-colors hover:border-line-strong"
+          >
+            <Icon className="size-4 shrink-0 text-ink-faint group-hover:text-accent" />
+            <span className="text-sm font-medium text-ink">{title}</span>
+            <span className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-1">
+              {counts.map((c) => (
+                <span key={c.state} className="flex items-center gap-1.5 text-xs text-ink-dim">
+                  <StateIcon state={c.state} />
+                  <span className="text-lg font-semibold text-ink">{c.n}</span>
+                  <span className={cn('hidden', LABELLED[counts.length])}>
+                    {STATE_LABEL[c.state]}
+                  </span>
                 </span>
-              </span>
-            ))}
-          </span>
-        </Link>
-      ))}
+              ))}
+            </span>
+          </Link>
+        ))}
+      </div>
+      {origins.length > 1 ? (
+        <p className="text-xs text-ink-faint">
+          {origins.map((o) => `${o.n} ${o.label}`).join(' · ')}
+        </p>
+      ) : null}
     </PanelBody>
   )
 }

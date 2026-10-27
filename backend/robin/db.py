@@ -192,12 +192,39 @@ def _suwayomi_added(c: sqlite3.Connection, schema: str) -> None:
     c.execute("UPDATE comics SET suwayomi = 1 WHERE suwayomi_id IS NOT NULL AND suwayomi = 0")
 
 
+def _origins(c: sqlite3.Connection, schema: str) -> None:
+    """What Robin monitored on its own before it kept why: a row made within a minute of its
+    mark in `favourite_monitored` or `library_monitored`, so not one the user monitored again
+    later, and a series taken in from the Suwayomi library. Which favourite is matched on the
+    hourly pass, `unnamed_favourite_origins`."""
+    near = "ABS(julianday(m.created_at) - julianday(t.created_at)) < 1.0 / 1440"
+    unnamed = json.dumps({"kind": "favourite", "id": None, "name": None})
+    for category, (table, expr) in ORIGIN_ROWS.items():
+        c.execute(
+            f"UPDATE {table} AS t SET origin_json = ? WHERE origin_json IS NULL AND EXISTS"
+            f" (SELECT 1 FROM favourite_monitored m WHERE m.category = ? AND m.title = {expr}"
+            f" AND {near})",
+            (unnamed, category),
+        )
+    c.execute(
+        "UPDATE reminders AS t SET origin_json = json_object('kind',"
+        " CASE kind WHEN 'movie' THEN 'radarr' ELSE 'sonarr' END)"
+        " WHERE origin_json IS NULL AND EXISTS (SELECT 1 FROM library_monitored m"
+        f" WHERE m.title = kind || '-' || tmdb_id AND {near})"
+    )
+    c.execute(
+        "UPDATE comics SET origin_json = json_object('kind', 'suwayomi')"
+        " WHERE origin_json IS NULL AND issue_id LIKE 'suwayomi-%'"
+    )
+
+
 # One-time changes to what an older Robin stored, each with the day its release shipped. Every
 # start runs them all after the columns are added, and each does nothing once done.
 # `test_migrations` fails `MIGRATION_DAYS` after that day, and the owner decides whether it goes.
 MIGRATIONS: tuple[tuple[str, Callable[[sqlite3.Connection, str], None]], ...] = (
     ("2026-10-27", _universes),
     ("2026-10-27", _suwayomi_added),
+    ("2026-10-27", _origins),
 )
 MIGRATION_DAYS = 90
 
@@ -1075,7 +1102,7 @@ def create_request(igdb_id: int) -> int:
 def _request(row: sqlite3.Row) -> dict[str, Any]:
     """A request as the API sends it. The release under review carries Prowlarr's key."""
     # A Row iterates its values, so its keys are asked for by name.
-    return {k: row[k] for k in row.keys() if k not in ("review_json", "rejected_json")}  # noqa: SIM118
+    return origin({k: row[k] for k in row.keys() if k not in ("review_json", "rejected_json")})  # noqa: SIM118
 
 
 def list_requests() -> list[dict[str, Any]]:
@@ -1293,7 +1320,7 @@ def rows(table: Table) -> list[dict[str, Any]]:
     """Every row, newest first."""
     with conn() as c:
         found = c.execute(f"SELECT * FROM {table} ORDER BY created_at DESC").fetchall()
-    return [dict(row) for row in found]
+    return [origin(dict(row)) for row in found]
 
 
 def waiting(table: Table) -> list[dict[str, Any]]:
@@ -1305,7 +1332,7 @@ def waiting(table: Table) -> list[dict[str, Any]]:
 def row(table: Table, row_id: int) -> dict[str, Any] | None:
     with conn() as c:
         found = c.execute(f"SELECT * FROM {table} WHERE id = ?", (row_id,)).fetchone()
-    return None if found is None else dict(found)
+    return None if found is None else origin(dict(found))
 
 
 def delete_row(table: Table, row_id: int) -> None:
@@ -1408,8 +1435,8 @@ def take_in_comic(
     with conn() as c:
         c.execute(
             "INSERT INTO comics (issue_id, title, series, year, url, cover, status, suwayomi,"
-            " suwayomi_id, issues, chapters, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, 'added', 1, ?, ?, ?, ?)"
+            " suwayomi_id, issues, chapters, origin_json, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, 'added', 1, ?, ?, ?, json_object('kind', 'suwayomi'), ?)"
             " ON CONFLICT (issue_id) DO NOTHING",
             (
                 f"suwayomi-{suwayomi_id}",
@@ -1767,6 +1794,75 @@ def mark_favourite_monitored(category: FavouriteCategory, title: str) -> None:
             " VALUES (?, ?, ?)",
             (category, title, now()),
         )
+
+
+# ---------------------------------------------------------------- origins
+
+# Why Robin monitors a row, its `origin_json`: `{"kind": "favourite", "id", "name"}`, the name
+# kept should the favourite go and both NULL until the hourly pass matches it, or the kind of
+# library holding it, `radarr`, `sonarr` or `suwayomi`. NULL is the user's own Monitor.
+OriginKind = Literal["favourite", "radarr", "sonarr", "suwayomi"]
+
+# Each category's monitored rows, and its rows' key as `favourites._monitor_key` writes it.
+ORIGIN_ROWS: dict[Category, tuple[Table, str]] = {
+    "games": ("requests", "CAST(igdb_id AS TEXT)"),
+    "comics": ("comics", "'series-' || series_id"),
+    "screens": ("reminders", "kind || '-' || tmdb_id"),
+    "books": ("book_reminders", "CAST(hardcover_id AS TEXT)"),
+}
+
+
+def origin(row: dict[str, Any]) -> dict[str, Any]:
+    """A monitored row as the API sends it, its origin read, and the favourite it came from
+    named for its star."""
+    found = json.loads(row.pop("origin_json", None) or "null")
+    named = found.get("name") if found and found["kind"] == "favourite" else None
+    return {**row, "origin": found, "favourite": row.get("favourite") or named}
+
+
+def set_origin(category: Category, key: str, why: dict[str, Any]) -> None:
+    table, expr = ORIGIN_ROWS[category]
+    with conn() as c:
+        c.execute(f"UPDATE {table} SET origin_json = ? WHERE {expr} = ?", (json.dumps(why), key))
+
+
+def unnamed_favourite_origins(category: Category) -> set[str]:
+    """The rows monitored from a favourite before Robin kept which, by key."""
+    table, expr = ORIGIN_ROWS[category]
+    with conn() as c:
+        found = c.execute(
+            f"SELECT {expr} AS key FROM {table} WHERE json_extract(origin_json, '$.kind')"
+            " = 'favourite' AND json_extract(origin_json, '$.id') IS NULL"
+        ).fetchall()
+    return {row["key"] for row in found}
+
+
+def monitored_from(favourite_id: int) -> dict[Category, list[dict[str, Any]]]:
+    """Every row monitored from a favourite, by category."""
+    out: dict[Category, list[dict[str, Any]]] = {}
+    with conn() as c:
+        for category, (table, _) in ORIGIN_ROWS.items():
+            out[category] = [
+                dict(row)
+                for row in c.execute(
+                    f"SELECT * FROM {table} WHERE json_extract(origin_json, '$.id') = ?",
+                    (favourite_id,),
+                ).fetchall()
+            ]
+    return out
+
+
+def origin_counts() -> dict[int, int]:
+    """How many titles each favourite has had monitored, a film's release types counted once."""
+    counts: dict[int, int] = {}
+    with conn() as c:
+        for table, expr in ORIGIN_ROWS.values():
+            for row in c.execute(
+                f"SELECT json_extract(origin_json, '$.id') AS id, COUNT(DISTINCT {expr}) AS n"
+                f" FROM {table} WHERE json_extract(origin_json, '$.id') IS NOT NULL GROUP BY 1"
+            ):
+                counts[row["id"]] = counts.get(row["id"], 0) + row["n"]
+    return counts
 
 
 # ---------------------------------------------------------------- countdowns

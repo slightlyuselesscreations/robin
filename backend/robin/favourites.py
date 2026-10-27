@@ -332,18 +332,21 @@ async def notify_favourites(now: datetime | None = None) -> int:
 
 
 async def monitor_favourites() -> int:
-    """Monitor each favourite's new release, in a category whose Monitor switch is on, once.
-    Returns how many were monitored."""
+    """Monitor each favourite's new release, in a category whose Monitor switch is on, once,
+    each kept as from that favourite and told. A row monitored from a favourite before Robin
+    kept which is matched to the first that has it coming. Returns how many were monitored."""
     settings = db.get_settings()
     added = 0
     for category in KINDS:
-        if not settings.favourites_monitor(category):
-            continue
+        monitor = settings.favourites_monitor(category)
+        unnamed = db.unnamed_favourite_origins(category)
         stars = db.favourites(category)
-        if not stars:
+        if not stars or not (monitor or unnamed):
             continue
         done = db.favourite_monitored(category) | _monitored(category)
+        told: list[tuple[dict[str, Any], str]] = []
         for favourite in stars:
+            why = {"kind": "favourite", "id": favourite["id"], "name": favourite["name"]}
             try:
                 titles = await coming(settings, category, favourite["kind"], favourite["ids"])
             except upstream.UpstreamError as exc:
@@ -351,7 +354,10 @@ async def monitor_favourites() -> int:
                 continue
             for release in titles:
                 key = _monitor_key(category, release)
-                if key in done:
+                if key in unnamed:
+                    db.set_origin(category, key, why)
+                    unnamed.discard(key)
+                if not monitor or key in done:
                     continue
                 try:
                     made = await _monitor(settings, category, release)
@@ -361,10 +367,62 @@ async def monitor_favourites() -> int:
                 if not made:
                     continue
                 db.mark_favourite_monitored(category, key)
+                db.set_origin(category, key, why)
                 done.add(key)
+                told.append((_brief(category, release), favourite["name"]))
                 log.info("favourites: monitoring %s %s, from %s", category, key, favourite["name"])
                 added += 1
+        await _tell_monitored(settings, category, told)
     return added
+
+
+# More monitored from favourites at once than this go out as one notice.
+TELL_APART = 3
+
+
+async def _tell_monitored(
+    settings: db.Settings, category: Category, told: list[tuple[dict[str, Any], str]]
+) -> None:
+    """Tell what a pass monitored from favourites, each on its own, or as one notice past
+    `TELL_APART`. Nothing is retried: what was monitored stays monitored either way."""
+    channel = settings.notices(category)
+    if channel is None or not told:
+        return
+    label = notify.LABELS[category]
+    # Each as title, message, where it opens and its art.
+    sends: list[tuple[str, str, str | None, str | None]] = (
+        [
+            (
+                f"Now monitoring {release['title']} ({label})",
+                f"You favourited {name}.",
+                release["click"],
+                release["art"],
+            )
+            for release, name in told
+        ]
+        if len(told) <= TELL_APART
+        else [
+            (
+                f"Now monitoring {len(told)} releases ({label})",
+                "\n".join(f"{release['title']}. You favourited {name}." for release, name in told),
+                None,
+                None,
+            )
+        ]
+    )
+    for title, message, click, attach in sends:
+        try:
+            await notify.send(
+                settings,
+                channel,
+                title=title,
+                message=message,
+                tags=TAGS[category],
+                click=click,
+                attach=attach,
+            )
+        except notify.NotifyError as exc:
+            log.warning("favourites: could not tell %s: %s", title, exc)
 
 
 async def _monitor(settings: db.Settings, category: Category, release: dict[str, Any]) -> bool:

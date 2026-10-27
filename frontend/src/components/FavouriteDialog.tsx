@@ -117,6 +117,7 @@ function Body({ open }: { open: Pick<Entity, 'category' | 'kind' | 'id'> }) {
     queryFn: () => api.favourite(open.category, open.kind, open.id),
     staleTime: 10 * 60_000,
   })
+  const mine = findFavourite(useFavourites().data, open)
   if (detail.isPending)
     return (
       <div className="flex h-72 items-center justify-center">
@@ -134,7 +135,12 @@ function Body({ open }: { open: Pick<Entity, 'category' | 'kind' | 'id'> }) {
   const { entity, releases } = detail.data
   return (
     <MediaBody>
-      <MediaHead art={entity.image} shape="cover" title={entity.name} meta={[entity.meta]}>
+      <MediaHead
+        art={entity.image}
+        shape="cover"
+        title={entity.name}
+        meta={[entity.meta, mine?.monitored ? `${mine.monitored} monitored` : null]}
+      >
         {entity.url ? (
           <Links>
             <OutLink href={entity.url}>{SOURCE[entity.category]}</OutLink>

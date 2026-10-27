@@ -48,6 +48,10 @@ async def load_game(igdb_id: int) -> dict[str, Any]:
     return game
 
 
+# What removing a row of each table undoes first, as `tracked_routes` registers it.
+FORGET: dict[db.Table, Callable[[db.Settings, dict[str, Any]], Awaitable[None]]] = {}
+
+
 def tracked_routes(
     router: APIRouter,
     path: str,
@@ -63,6 +67,8 @@ def tracked_routes(
     off. Without it, anything handed off stays where it went. `before` runs ahead of the list,
     to bring the rows up to date with where they were handed off.
     """
+    if forget is not None:
+        FORGET[table] = forget
 
     async def listed() -> list[dict[str, Any]]:
         settings = db.get_settings()

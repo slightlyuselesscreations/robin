@@ -104,7 +104,11 @@ function Body({ id, listed, onClose }: { id: number; listed?: Series; onClose: (
 
         {series.description ? <Summary>{series.description}</Summary> : null}
 
-        <MediaFooter status={state ? { state, text: STATE_LABEL[state] } : null}>
+        <MediaFooter
+          status={
+            state ? { state, text: STATE_LABEL[state], origin: row ? row.origin : undefined } : null
+          }
+        >
           <Actions>
             <MonitorButton
               monitored={series.inLibrary || row !== null}

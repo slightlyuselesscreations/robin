@@ -255,6 +255,7 @@ function Body({
             monitor
               ? {
                   state: COMIC_STATE[monitor.status],
+                  origin: monitor.origin,
                   text: STATE_LABEL[COMIC_STATE[monitor.status]],
                 }
               : null

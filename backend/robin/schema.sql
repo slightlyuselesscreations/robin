@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS requests (
     error           TEXT,
     -- Set when the Notified panel on Monitored is cleared. Hides the row there and nowhere else.
     cleared_at      TEXT,
+    -- Why Robin monitors it, `db.origin`: NULL for the user's own Monitor.
+    origin_json     TEXT,
     created_at      TEXT    NOT NULL,
     updated_at      TEXT    NOT NULL
 );
@@ -180,6 +182,8 @@ CREATE TABLE IF NOT EXISTS comics (
     added_at    TEXT,
     -- Set when the Found panel on Monitored is cleared. Hides the row there and nowhere else.
     cleared_at  TEXT,
+    -- Why Robin monitors it, `db.origin`: NULL for the user's own Monitor.
+    origin_json TEXT,
     created_at  TEXT    NOT NULL
 );
 
@@ -204,6 +208,8 @@ CREATE TABLE IF NOT EXISTS reminders (
     sent_at      TEXT,
     -- Set when the Found panel on Monitored is cleared. Hides the row there and nowhere else.
     cleared_at   TEXT,
+    -- Why Robin monitors it, `db.origin`: NULL for the user's own Monitor.
+    origin_json  TEXT,
     created_at   TEXT    NOT NULL,
     UNIQUE (kind, tmdb_id, release_type)
 );
@@ -230,6 +236,8 @@ CREATE TABLE IF NOT EXISTS book_reminders (
     sent_at      TEXT,
     -- Set when the Found panel on Monitored is cleared. Hides the row there and nowhere else.
     cleared_at   TEXT,
+    -- Why Robin monitors it, `db.origin`: NULL for the user's own Monitor.
+    origin_json  TEXT,
     created_at   TEXT    NOT NULL,
     UNIQUE (kind, hardcover_id)
 );

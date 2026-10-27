@@ -117,6 +117,7 @@ function Footer({ book }: { book: BookDetail }) {
         shown
           ? {
               state: REMINDER_STATE[shown.status],
+              origin: shown.origin,
               text: STATE_LABEL[REMINDER_STATE[shown.status]],
             }
           : null

@@ -193,16 +193,35 @@ export function useFavourite(entity: Pick<Entity, 'category' | 'kind' | 'id'>) {
     },
     onSuccess: async (on) => {
       toast.success(on ? 'Added to favourites' : 'Removed from favourites')
-      if (on || entity.category !== 'screens') return
+      if (on || !mine) return
       // What it has coming that Radarr or Sonarr holds is asked about, never left without a word.
-      const { releases } = await api.favourite(entity.category, entity.kind, entity.id)
-      askArrRemove(heldOf(inLibrary, releases as ScreenTitle[]))
+      const held =
+        entity.category === 'screens'
+          ? heldOf(
+              inLibrary,
+              (await api.favourite(entity.category, entity.kind, entity.id))
+                .releases as ScreenTitle[],
+            )
+          : []
+      // Then what Robin monitored from it, after, so one question is up at a time.
+      if (mine.monitored) askStopFavourite({ id: mine.id, then: () => askArrRemove(held) })
+      else askArrRemove(held)
     },
     onError: (error: unknown) =>
       toast.error('Could not change the favourite', { description: errorText(error) }),
     onSettled: () => void queryClient.invalidateQueries(),
   })
   return { favourite: mine, loaded: favourites.isSuccess, toggle }
+}
+
+/** Fired to ask whether to stop what Robin monitored from a favourite just removed. */
+export const STOP_FAVOURITE = 'robin:stop-favourite'
+
+export type StopAsk = { id: number; then: () => void }
+
+/** Ask, through `FavouriteStopDialog`, whether to stop what Robin monitored from a favourite. */
+export function askStopFavourite(ask: StopAsk) {
+  window.dispatchEvent(new CustomEvent(STOP_FAVOURITE, { detail: ask }))
 }
 
 /** Every maker hidden, as a favourite is kept. */

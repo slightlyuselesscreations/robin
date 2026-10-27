@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from robin import db, favourites, upstream
-from robin.routes.common import notify_now
+from robin.routes.common import FORGET, notify_now
 
 router = APIRouter(prefix="/api/favourites", tags=["favourites"])
 
@@ -33,7 +33,9 @@ async def _entity(category: favourites.Category, kind: str, source_id: int) -> d
 
 @router.get("")
 def listed() -> list[dict[str, Any]]:
-    return db.favourites()
+    """Each favourite, with how many titles Robin has monitored from it."""
+    counts = db.origin_counts()
+    return [{**f, "monitored": counts.get(f["id"], 0)} for f in db.favourites()]
 
 
 @router.get("/coming")
@@ -115,3 +117,20 @@ async def detail(category: favourites.Category, kind: str, source_id: int) -> di
         "favourite": starred,
         "releases": await favourites.releases(db.get_settings(), category, kind, ids),
     }
+
+
+@router.post("/{favourite_id}/stop")
+async def stop_monitored(favourite_id: int) -> dict[str, int]:
+    """Stop monitoring every title Robin monitored from a favourite, as each one's Stop
+    monitoring would, the favourite itself kept or not. Returns how many rows went."""
+    settings = db.get_settings()
+    stopped = 0
+    for category, rows in db.monitored_from(favourite_id).items():
+        table = db.ORIGIN_ROWS[category][0]
+        for row in rows:
+            forget = FORGET.get(table)
+            if forget is not None:
+                await forget(settings, row)
+            db.delete_row(table, int(row["id"]))
+            stopped += 1
+    return {"stopped": stopped}

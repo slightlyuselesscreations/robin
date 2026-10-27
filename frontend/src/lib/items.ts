@@ -705,7 +705,12 @@ export function favouriteItem(favourite: Favourite, to: string): Item {
     shape: 'cover',
     library: null,
     title: favourite.name,
-    meta: `Since ${day(favourite.created_at)}`,
+    meta: [
+      `Since ${day(favourite.created_at)}`,
+      favourite.monitored ? `${favourite.monitored} monitored` : null,
+    ]
+      .filter(Boolean)
+      .join(' · '),
     tag: null,
     platform: null,
     favourite: favourite.name,

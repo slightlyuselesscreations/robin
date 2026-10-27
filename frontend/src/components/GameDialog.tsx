@@ -208,6 +208,7 @@ function Body({ igdbId, onClose }: { igdbId: number; onClose: () => void }) {
             entry
               ? {
                   state: GAME_STATE[entry.status],
+                  origin: entry.origin,
                   text:
                     entry.status === 'matched' ? (
                       <>

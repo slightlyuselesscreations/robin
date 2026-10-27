@@ -117,6 +117,66 @@ async def test_a_release_can_be_monitored_instead(
     assert {r["hardcover_id"] for r in db.rows("book_reminders")} == {2}
 
 
+async def test_what_a_favourite_monitored_is_kept_as_its_own_told_and_stopped(
+    client: AsyncClient, notified: list[dict[str, Any]], coming: dict[str, Any]
+) -> None:
+    configure(books_favourites_monitor=True)
+    star = db.add_favourite("books", "author", 7, "Some Writer", None)
+    coming["books"] = [book(1, "2026-10-08")]
+    db.add_book_reminder(
+        kind="book", hardcover_id=9, book_id=9, title="Mine", cover=None, date="2026-11-01"
+    )
+    assert await favourites.monitor_favourites() == 1
+    assert notified[-1]["title"] == "Now monitoring Book 1 (Books)"
+    assert notified[-1]["message"] == "You favourited Some Writer."
+
+    listed = (await client.get("/api/books/reminders")).json()
+    by_id = {r["hardcover_id"]: r for r in listed}
+    assert by_id[1]["favourite"] == "Some Writer"
+    assert by_id[1]["origin"] == {"kind": "favourite", "id": star["id"], "name": "Some Writer"}
+    assert by_id[9]["origin"] is None
+    [counted] = (await client.get("/api/favourites")).json()
+    assert counted["monitored"] == 1
+
+    # Stopping what it monitored leaves the user's own.
+    await client.delete(f"/api/favourites/{star['id']}")
+    stopped = await client.post(f"/api/favourites/{star['id']}/stop")
+    assert stopped.json() == {"stopped": 1}
+    assert [r["hardcover_id"] for r in db.rows("book_reminders")] == [9]
+
+
+async def test_past_the_limit_what_was_monitored_is_told_at_once(
+    notified: list[dict[str, Any]], coming: dict[str, Any]
+) -> None:
+    configure(books_favourites_monitor=True)
+    db.add_favourite("books", "author", 7, "Some Writer", None)
+    coming["books"] = [book(i, "2026-10-08") for i in range(1, 6)]
+    assert await favourites.monitor_favourites() == 5
+    [told] = notified
+    assert told["title"] == "Now monitoring 5 releases (Books)"
+    assert told["message"].splitlines()[0] == "Book 1. You favourited Some Writer."
+
+
+async def test_what_was_monitored_before_origins_is_matched_to_its_favourite(
+    coming: dict[str, Any],
+) -> None:
+    configure()
+    db.add_book_reminder(
+        kind="book", hardcover_id=1, book_id=1, title="Book 1", cover=None, date="2026-10-08"
+    )
+    db.mark_favourite_monitored("books", "1")
+    with db.conn() as c:
+        db._origins(c, "")
+    assert db.unnamed_favourite_origins("books") == {"1"}
+
+    # Matched even with Automatically monitor off, which only stops new ones.
+    star = db.add_favourite("books", "author", 7, "Some Writer", None)
+    coming["books"] = [book(1, "2026-10-08")]
+    assert await favourites.monitor_favourites() == 0
+    [row] = db.rows("book_reminders")
+    assert row["origin"] == {"kind": "favourite", "id": star["id"], "name": "Some Writer"}
+
+
 async def test_nothing_is_monitored_while_the_switch_is_off(coming: dict[str, Any]) -> None:
     configure()
     db.add_favourite("books", "author", 7, "Some Writer", None)

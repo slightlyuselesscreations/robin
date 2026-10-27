@@ -38,11 +38,12 @@ import type {
   FavouriteKind,
   Library,
   MakerMode,
+  Origin,
   Ref,
   State,
 } from '@/lib/api'
-import { imageSrc } from '@/lib/api'
-import { favouriteParam, useFavourite, useMakerFilter } from '@/lib/favourites'
+import { LIBRARY_NAME, imageSrc } from '@/lib/api'
+import { favouriteParam, useFavourite, useFavourites, useMakerFilter } from '@/lib/favourites'
 import type { Shape } from '@/lib/items'
 import { useDialogBack, withParam } from '@/lib/params'
 import { useAddCountdown } from '@/lib/countdowns'
@@ -432,8 +433,8 @@ export function MediaFooter({
   status,
   children,
 }: {
-  /** What Robin is doing with this item, one line above the actions. */
-  status?: { state: State; text: React.ReactNode } | null
+  /** What Robin is doing with this item, one line above the actions, and why it monitors it. */
+  status?: { state: State; text: React.ReactNode; origin?: Origin | null } | null
   children: React.ReactNode
 }) {
   return (
@@ -447,10 +448,47 @@ export function MediaFooter({
         >
           <StateIcon state={status.state} />
           {status.text}
+          {status.origin !== undefined ? <OriginNote origin={status.origin} /> : null}
         </p>
       ) : null}
       {children}
     </div>
+  )
+}
+
+/** Why Robin monitors an item: your own Monitor, a favourite, opening it while it is one, or the
+ * library holding it. */
+function OriginNote({ origin }: { origin: Origin | null }) {
+  const [params] = useSearchParams()
+  const favourites = useFavourites()
+  if (origin === null) return <span className="text-ink-faint">· by you</span>
+  if (origin.kind !== 'favourite') {
+    const app = origin.kind === 'suwayomi' ? 'Suwayomi' : LIBRARY_NAME[origin.kind]
+    return <span className="text-ink-faint">· via {app}</span>
+  }
+  const star = favourites.data?.find((f) => f.id === origin.id)
+  const name = (
+    <>
+      <Star className="size-3 fill-star text-star" />
+      {origin.name ?? 'a favourite'}
+    </>
+  )
+  const next = new URLSearchParams(params)
+  for (const key of ITEM_PARAMS) next.delete(key)
+  return (
+    <span className="flex min-w-0 items-center gap-1 text-ink-faint">
+      · from
+      {star ? (
+        <Link
+          to={withParam(next, 'favourite', favouriteParam({ ...star, id: star.source_id }))}
+          className="inline-flex min-w-0 items-center gap-1 text-ink-dim hover:text-ink"
+        >
+          {name}
+        </Link>
+      ) : (
+        name
+      )}
+    </span>
   )
 }
 

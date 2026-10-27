@@ -64,6 +64,11 @@ export type Game = {
 /** A grab as qBittorrent has it. `state` is qBittorrent's own, progress 0 to 1. */
 export type Download = { state: string; progress: number; eta: number }
 
+/** Why Robin monitors something on its own: a favourite, its id and name null until matched, or
+ * the library holding it. */
+export type Origin =
+  { kind: 'favourite'; id: number | null; name: string | null } | { kind: Library | 'suwayomi' }
+
 export type MonitoredGame = {
   id: number
   igdb_id: number
@@ -84,6 +89,10 @@ export type MonitoredGame = {
   error: string | null
   /** Cleared from the Notified panel on Monitored. Everywhere else it still reads as found. */
   cleared_at: string | null
+  /** Why Robin monitors it. Null for your own Monitor. */
+  origin: Origin | null
+  /** The favourite it was monitored from, by name, starred after the title. */
+  favourite: string | null
   created_at: string
   cover_image_id: string | null
   first_release_date: number | null
@@ -381,6 +390,10 @@ export type MonitoredComic = {
   added_at: string | null
   /** Cleared from the Notified panel on Monitored. Everywhere else it still reads as found. */
   cleared_at: string | null
+  /** Why Robin monitors it. Null for your own Monitor. */
+  origin: Origin | null
+  /** The favourite it was monitored from, by name, starred after the title. */
+  favourite: string | null
   created_at: string
 }
 
@@ -407,6 +420,10 @@ export type Reminder = {
   notified_for: string | null
   sent_at: string | null
   cleared_at: string | null
+  /** Why Robin monitors it. Null for your own Monitor. */
+  origin: Origin | null
+  /** The favourite it was monitored from, by name, starred after the title. */
+  favourite: string | null
   created_at: string
 }
 
@@ -461,6 +478,10 @@ export type BookReminder = {
   notified_for: string | null
   sent_at: string | null
   cleared_at: string | null
+  /** Why Robin monitors it. Null for your own Monitor. */
+  origin: Origin | null
+  /** The favourite it was monitored from, by name, starred after the title. */
+  favourite: string | null
   created_at: string
 }
 
@@ -895,6 +916,8 @@ export type Favourite = {
   name: string
   image: string | null
   created_at: string
+  /** How many titles Robin monitored from it, on the favourites list only. */
+  monitored?: number
 }
 
 /** A favourite's dated release, for Home. `to` is its dialog parameter, `game=12`. */
@@ -1031,6 +1054,7 @@ export const api = {
     post<Favourite>('/api/favourites', { category, kind, id }),
   favouritesComing: () => request<FavouriteRelease[]>('/api/favourites/coming'),
   removeFavourite: (id: number) => request<void>(`/api/favourites/${id}`, { method: 'DELETE' }),
+  stopFavourite: (id: number) => post<{ stopped: number }>(`/api/favourites/${id}/stop`),
   logs: (after: number) => request<LogLine[]>(`/api/logs?after=${after}`),
   countdowns: () => request<Countdown[]>('/api/countdowns'),
   addCountdown: (target: CountdownTarget) => post<Countdown>('/api/countdowns', target),

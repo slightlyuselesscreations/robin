@@ -261,13 +261,20 @@ export function useUpcoming(): Tracked[] {
   })
   const releases = (coming.data ?? []).filter((r) => shown(r.category))
   const from = new Map(releases.map((r) => [`?${r.to}`, r.favourite]))
-  const monitored = new Set(watched.map((w) => w.to))
-  const listed = new Set([...monitored, ...releases.map((r) => `?${r.to}`)])
+  // A monitored title Robin has no date for, a film with none in the region, is dated by the
+  // favourite's release or the calendar's, carrying its own state.
+  const monitored = new Map(watched.map((w) => [w.to, w]))
+  const datedMonitored = new Set(watched.filter((w) => w.release).map((w) => w.to))
+  const listed = new Set([...datedMonitored, ...releases.map((r) => `?${r.to}`)])
   const dated = (calendar.data ?? []).filter((r) => shown(r.category) && !listed.has(`?${r.to}`))
+  const withState = (t: Tracked): Tracked => {
+    const w = monitored.get(t.to)
+    return w ? { ...t, state: w.state, favourite: w.favourite ?? t.favourite, origin: w.origin } : t
+  }
   const upcoming: Tracked[] = [
     ...watched.map((w) => ({ ...w, favourite: w.favourite ?? from.get(w.to) ?? null })),
     ...releases
-      .filter((r) => !monitored.has(`?${r.to}`))
+      .filter((r) => !datedMonitored.has(`?${r.to}`))
       .map((r): Tracked => ({
         key: `favourite:${r.category}:${r.key}`,
         category: r.category,
@@ -284,24 +291,27 @@ export function useUpcoming(): Tracked[] {
         releaseText: calendarDay(r.date),
         foundAt: null,
         createdAt: null,
-      })),
-    ...dated.map((r): Tracked => ({
-      key: `arr:${r.key}`,
-      category: r.category,
-      state: null,
-      favourite: null,
-      origin: null,
-      library: r.library,
-      title: r.title,
-      image: r.image,
-      shape: 'cover',
-      tag: r.tag,
-      to: `?${r.to}`,
-      release: localDay(r.date),
-      releaseText: calendarDay(r.date),
-      foundAt: null,
-      createdAt: null,
-    })),
+      }))
+      .map(withState),
+    ...dated
+      .map((r): Tracked => ({
+        key: `arr:${r.key}`,
+        category: r.category,
+        state: null,
+        favourite: null,
+        origin: null,
+        library: r.library,
+        title: r.title,
+        image: r.image,
+        shape: 'cover',
+        tag: r.tag,
+        to: `?${r.to}`,
+        release: localDay(r.date),
+        releaseText: calendarDay(r.date),
+        foundAt: null,
+        createdAt: null,
+      }))
+      .map(withState),
   ]
   return upcoming.filter(current)
 }

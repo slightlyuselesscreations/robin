@@ -1599,6 +1599,14 @@ function SuwayomiPanel({ form, setForm }: StoredProps) {
           className={INPUT}
         />
       </Field>
+
+      <Field label="Automatically add monitored comic series">
+        <Toggle
+          id="suwayomi-add"
+          on={form.suwayomi_add ?? false}
+          onChange={(on) => setForm({ ...form, suwayomi_add: on })}
+        />
+      </Field>
     </Panel>
   )
 }
@@ -1784,8 +1792,16 @@ function ScreensTab({ form, setForm, stored }: TabProps & { stored: Settings }) 
 }
 
 const ARR = {
-  radarr: { icon: Film, placeholder: 'http://radarr:7878', added: 'Add monitored movies' },
-  sonarr: { icon: Tv, placeholder: 'http://sonarr:8989', added: 'Add monitored shows' },
+  radarr: {
+    icon: Film,
+    placeholder: 'http://radarr:7878',
+    added: 'Automatically add monitored movies',
+  },
+  sonarr: {
+    icon: Tv,
+    placeholder: 'http://sonarr:8989',
+    added: 'Automatically add monitored shows',
+  },
 } as const
 
 /**
@@ -2593,24 +2609,21 @@ function QuietHours({
 
 /** How a category treats a favourite's new releases, as Settings names the switches. */
 const FAVOURITE_FIELDS = {
-  games: { announce: 'games_favourites', monitor: 'games_favourites_monitor' },
-  comics: { announce: 'comics_favourites', monitor: 'comics_favourites_monitor' },
-  screens: { announce: 'screen_favourites', monitor: 'screen_favourites_monitor' },
-  books: { announce: 'books_favourites', monitor: 'books_favourites_monitor' },
-} as const satisfies Record<
-  FavouriteCategory,
-  { announce: KeyOf<boolean>; monitor: KeyOf<boolean> }
->
+  games: { notify: 'games_favourites', monitor: 'games_favourites_monitor' },
+  comics: { notify: 'comics_favourites', monitor: 'comics_favourites_monitor' },
+  screens: { notify: 'screen_favourites', monitor: 'screen_favourites_monitor' },
+  books: { notify: 'books_favourites', monitor: 'books_favourites_monitor' },
+} as const satisfies Record<FavouriteCategory, { notify: KeyOf<boolean>; monitor: KeyOf<boolean> }>
 
 function FavouritesPanel({ category, form, setForm }: TabProps & { category: FavouriteCategory }) {
   const fields = FAVOURITE_FIELDS[category]
   return (
     <Panel title="Favourites" icon={Star}>
-      <Field label="Automatically announce">
+      <Field label="Automatically notify">
         <Toggle
-          id={`${category}-favourites-announce`}
-          on={form[fields.announce] ?? true}
-          onChange={(on) => setForm({ ...form, [fields.announce]: on })}
+          id={`${category}-favourites-notify`}
+          on={form[fields.notify] ?? true}
+          onChange={(on) => setForm({ ...form, [fields.notify]: on })}
         />
       </Field>
       <Field label="Automatically monitor">

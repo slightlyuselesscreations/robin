@@ -66,7 +66,7 @@ export type Tracked = {
 }
 
 /** Something monitored, with its state and the day it was monitored. */
-export type Watched = Tracked & { state: State; createdAt: string }
+type Watched = Tracked & { state: State; createdAt: string }
 
 export type { CategoryKey }
 

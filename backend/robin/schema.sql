@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS settings (
     metron_token             TEXT NOT NULL DEFAULT '',
     suwayomi_url             TEXT NOT NULL DEFAULT '',
     suwayomi_source_id       TEXT NOT NULL DEFAULT '',
+    suwayomi_add             INTEGER NOT NULL DEFAULT 0,
     qbittorrent_url          TEXT NOT NULL DEFAULT '',
     qbittorrent_api_key      TEXT NOT NULL DEFAULT '',
     qbittorrent_category     TEXT NOT NULL DEFAULT 'games',
@@ -368,4 +369,15 @@ CREATE TABLE IF NOT EXISTS held_notices (
     click      TEXT,
     attach     TEXT,
     created_at TEXT NOT NULL
+);
+
+-- Every notice that went out, newest kept up to `db.SENT_KEPT`, for Recently notified on Home.
+CREATE TABLE IF NOT EXISTS sent_notices (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,
+    title    TEXT NOT NULL,
+    message  TEXT NOT NULL,
+    click    TEXT,
+    attach   TEXT,
+    sent_at  TEXT NOT NULL
 );

@@ -370,7 +370,7 @@ async def _sync_library() -> int:
                     attach=held["thumbnailUrl"],
                 )
             except notify.NotifyError as exc:
-                log.warning("suwayomi: notice for %s failed: %s", row["series"], exc)
+                log.warning("suwayomi: notification for %s failed: %s", row["series"], exc)
                 continue
             sent += 1
         if count != row["chapters"]:
@@ -494,5 +494,5 @@ async def add_if_found(
                 attach=comic["cover"],
             )
         except notify.NotifyError as exc:
-            log.warning("suwayomi: notice for %s failed: %s", comic["series"], exc)
+            log.warning("suwayomi: notification for %s failed: %s", comic["series"], exc)
     return True

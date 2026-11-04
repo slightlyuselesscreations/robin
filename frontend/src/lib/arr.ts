@@ -10,7 +10,7 @@ export const LIBRARY_CLASS: Record<Library, string> = {
   sonarr: 'text-sonarr',
 }
 
-export const appFor = (kind: ScreenKind): Library => (kind === 'movie' ? 'radarr' : 'sonarr')
+const appFor = (kind: ScreenKind): Library => (kind === 'movie' ? 'radarr' : 'sonarr')
 
 /** Whether Radarr, or Sonarr, is set. */
 export function useArrReady(): Record<Library, boolean> {

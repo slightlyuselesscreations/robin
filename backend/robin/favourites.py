@@ -454,9 +454,11 @@ async def monitor_series(
     settings: db.Settings, issue: dict[str, Any], *, to_suwayomi: bool = False
 ) -> dict[str, Any]:
     """Monitor the series an issue is of, each new issue announced from Metron. With
-    `to_suwayomi` it is added to Suwayomi instead, looked for at once and on every pass until
-    the source lists it, and Suwayomi alone announces its issues. Either way, a series the
-    library already holds is tracked from there, so its issues are never announced twice."""
+    `to_suwayomi`, or with `suwayomi_add` on, it is added to Suwayomi instead,
+    looked for at once and on every pass until the source lists it, and Suwayomi alone announces
+    its issues. Either way, a series the library already holds is tracked from there, so its
+    issues are never announced twice."""
+    to_suwayomi = to_suwayomi or (settings.suwayomi_add and settings.suwayomi_ready)
     series = suwayomi.series_title(issue["title"])
     comic = db.monitor_comic(
         issue_id=issue["id"],

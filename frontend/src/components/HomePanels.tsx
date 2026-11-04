@@ -11,6 +11,7 @@ import { Spinner } from '@/components/ui/spinner'
 import {
   LIBRARY_NAME,
   type Origin,
+  type SentNotice,
   SERVICES,
   STATE_LABEL,
   type Torrent,
@@ -18,7 +19,7 @@ import {
   releaseSize,
   errorText,
 } from '@/lib/api'
-import { CATEGORY } from '@/lib/categories'
+import { CATEGORY, useShown } from '@/lib/categories'
 import {
   type CategoryKey,
   type Tracked,
@@ -429,21 +430,66 @@ function Download({ torrent }: { torrent: Torrent }) {
 
 // ------------------------------------------------------------------ recently notified
 
+/** Every notice that went out, in every category shown, each opening where the notice did. */
 export function FoundPanel() {
-  const loading = useOverviewLoading()
-  const found = useTracked()
-    .filter((i) => i.foundAt)
-    .sort((a, b) => b.foundAt!.localeCompare(a.foundAt!))
-    .slice(0, ROWS)
+  const shown = useShown()
+  const sent = useQuery({ queryKey: ['notices'], queryFn: api.notices, refetchInterval: 60_000 })
+  const notices = (sent.data ?? []).filter((n) => shown(n.category)).slice(0, ROWS)
 
-  if (loading) return <PanelLoading />
-  if (!found.length) return <PanelEmpty>Nothing notified yet.</PanelEmpty>
+  if (sent.isPending) return <PanelLoading />
+  if (!notices.length) return <PanelEmpty>Nothing notified yet.</PanelEmpty>
   return (
     <ul className="divide-y divide-line">
-      {found.map((item) => (
-        <Row key={item.key} item={item} />
+      {notices.map((notice) => (
+        <NoticeRow key={notice.id} notice={notice} />
       ))}
     </ul>
+  )
+}
+
+function NoticeRow({ notice }: { notice: SentNotice }) {
+  const sentOn = new Date(notice.sent_at)
+  sentOn.setHours(0, 0, 0, 0)
+  const days = daysTo(sentOn)
+  const body = (
+    <>
+      <Lead
+        item={{
+          image: notice.attach,
+          shape: notice.category === 'games' ? 'poster' : 'cover',
+          state: null,
+          library: null,
+          title: notice.title,
+          favourite: null,
+          category: notice.category,
+          tag: null,
+        }}
+      />
+      <Clip className="hidden max-w-[40%] font-mono text-2xs text-ink-faint sm:block">
+        {notice.message}
+      </Clip>
+      <span className="shrink-0 text-xs font-medium text-ink-dim">{countdown(days)}</span>
+    </>
+  )
+  const row = 'flex items-center gap-3 px-4 py-2'
+  return (
+    <li>
+      {notice.click ? (
+        <a
+          href={notice.click}
+          target="_blank"
+          rel="noreferrer"
+          className={cn(
+            row,
+            'group transition-colors hover:bg-raised/50 focus-visible:outline-accent',
+          )}
+        >
+          {body}
+        </a>
+      ) : (
+        <div className={row}>{body}</div>
+      )}
+    </li>
   )
 }
 

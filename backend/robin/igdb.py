@@ -524,14 +524,10 @@ def _tomorrow() -> int:
     return int((today + timedelta(days=1)).timestamp())
 
 
-def _month_start() -> int:
-    start = db.month_start()
-    return int(datetime(start.year, start.month, 1, tzinfo=UTC).timestamp())
-
-
 def out(game: dict[str, Any]) -> bool:
     """Out before this month: found by search to be favourited."""
-    return not _current(game, _month_start())
+    start = db.month_start()
+    return not _current(game, int(datetime(start.year, start.month, 1, tzinfo=UTC).timestamp()))
 
 
 def monitorable(settings: db.Settings, game: dict[str, Any]) -> bool:

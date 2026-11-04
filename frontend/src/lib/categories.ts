@@ -3,7 +3,7 @@ import { BookOpen, Clapperboard, Gamepad2, LibraryBig, type LucideIcon } from 'l
 
 import { type Category, type Settings, api } from '@/lib/api'
 
-export type CategoryInfo = {
+type CategoryInfo = {
   key: Category
   label: string
   icon: LucideIcon

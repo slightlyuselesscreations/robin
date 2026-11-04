@@ -513,3 +513,16 @@ async def test_adding_to_suwayomi_needs_suwayomi(
     first = {"id": "2", "title": "Midnight X-Men #1", "url": "https://x.test", "week": "2026-10-07"}
     added = await client.post("/api/comics/monitored", json={**first, "suwayomi": True})
     assert added.status_code == 409
+
+
+async def test_with_its_switch_on_monitor_adds_to_suwayomi(
+    client: AsyncClient, suwayomi_stub: dict[str, Any]
+) -> None:
+    await suwayomi_on(client)
+    await client.put("/api/settings", json={"suwayomi_add": True})
+    assert (await client.get("/api/settings")).json()["suwayomi_add"] is True
+    suwayomi_stub["known"] = [manga(1954, "Midnight X-Men (2026-)")]
+    first = {"id": "2", "title": "Midnight X-Men #1", "url": "https://x.test", "week": "2026-10-07"}
+    monitored = (await client.post("/api/comics/monitored", json=first)).json()
+    assert (monitored["status"], monitored["suwayomi"]) == ("tracking", 1)
+    assert suwayomi_stub["added"] == [1954]

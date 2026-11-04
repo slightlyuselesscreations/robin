@@ -139,14 +139,12 @@ def _columns(c: sqlite3.Connection, table: str) -> set[str]:
     return {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
 
 
-def _rebuild(c: sqlite3.Connection, schema: str, table: str, needle: str) -> bool:
+def _rebuild(c: sqlite3.Connection, schema: str, table: str, needle: str) -> None:
     """Recreate `table` from the schema file when its stored CHECK lacks `needle`. SQLite
-    cannot change a constraint in place, so the rows move to a new table. True when it did."""
+    cannot change a constraint in place, so the rows move to a new table."""
     stored = c.execute("SELECT sql FROM sqlite_master WHERE name = ?", (table,)).fetchone()
-    if needle in stored["sql"]:
-        return False
-    _recreate(c, schema, table)
-    return True
+    if needle not in stored["sql"]:
+        _recreate(c, schema, table)
 
 
 def _recreate(c: sqlite3.Connection, schema: str, table: str) -> None:
@@ -334,6 +332,7 @@ class Settings:
     # Where monitored comic series are looked for. Both empty means they are not.
     suwayomi_url: str
     suwayomi_source_id: str
+    suwayomi_add: bool
     # What is downloading. The key is empty when qBittorrent lets the LAN in without one.
     qbittorrent_url: str
     qbittorrent_api_key: str
@@ -1690,6 +1689,33 @@ def unfilter_maker(maker_id: int) -> None:
 def delete_favourite(favourite_id: int) -> None:
     with conn() as c:
         c.execute("DELETE FROM favourites WHERE id = ?", (favourite_id,))
+
+
+# Notices kept for Recently notified. Home lists far fewer.
+SENT_KEPT = 200
+
+
+def sent_notice(
+    category: Category, title: str, message: str, click: str | None, attach: str | None
+) -> None:
+    with conn() as c:
+        c.execute(
+            "INSERT INTO sent_notices (category, title, message, click, attach, sent_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (category, title, message, click, attach, now()),
+        )
+        c.execute(
+            "DELETE FROM sent_notices WHERE id NOT IN"
+            " (SELECT id FROM sent_notices ORDER BY id DESC LIMIT ?)",
+            (SENT_KEPT,),
+        )
+
+
+def sent_notices() -> list[dict[str, Any]]:
+    """Every notice kept, newest first."""
+    with conn() as c:
+        found = c.execute("SELECT * FROM sent_notices ORDER BY id DESC").fetchall()
+    return [dict(row) for row in found]
 
 
 def hold_notice(

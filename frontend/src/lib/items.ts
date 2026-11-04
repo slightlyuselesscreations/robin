@@ -78,7 +78,7 @@ export type Item = {
 export const day = (iso: string | null) => (iso ? isoDay(new Date(iso)) : null)
 
 /** EA for a game in Early Access. */
-export const gameTag = (status: string | null) => (status === 'Early Access' ? 'EA' : null)
+const gameTag = (status: string | null) => (status === 'Early Access' ? 'EA' : null)
 
 /** Each platform family as a game's tag names it. */
 const PLATFORM_TAGS: Record<string, string> = {
@@ -123,7 +123,7 @@ export function downloadStage(entry: MonitoredGame): string | null {
 }
 
 /** What is known about a monitored game, for the glyph's hover. */
-export function gameStatus(status: MonitorStatus, entry?: MonitoredGame | null): Status {
+function gameStatus(status: MonitorStatus, entry?: MonitoredGame | null): Status {
   const state = GAME_STATE[status]
   if (!entry) return { state }
   if (state === 'found' || state === 'tracking') {
@@ -148,7 +148,7 @@ export function gameStatus(status: MonitorStatus, entry?: MonitoredGame | null):
   }
 }
 
-export function comicStatus(entry: MonitoredComic): Status {
+function comicStatus(entry: MonitoredComic): Status {
   const state = COMIC_STATE[entry.status]
   return state === 'waiting'
     ? { state, detail: [entry.suwayomi ? 'Not on the source yet, looked for hourly' : null] }
@@ -501,14 +501,14 @@ export const reminderKindTag = (entry: Reminder): string | null =>
   entry.kind === 'tv' ? 'Series' : (REMINDER_TAGS[entry.release_type] ?? null)
 
 /** A film reminder's release type, or the platform it is on. A show's names its network. */
-export function reminderTag(entry: Reminder): Required<Pick<Item, 'tag' | 'platform'>> {
+function reminderTag(entry: Reminder): Required<Pick<Item, 'tag' | 'platform'>> {
   return {
     tag: REMINDER_TAGS[entry.release_type] ?? null,
     platform: platformTag(entry.platform ? { name: entry.platform } : null, entry.date, entry.kind),
   }
 }
 
-export function reminderStatus(entry: Reminder): Status {
+function reminderStatus(entry: Reminder): Status {
   return noticeStatus(entry, entry.kind === 'tv' ? 'Each season premiere' : null)
 }
 
@@ -650,7 +650,7 @@ export function bookItem(book: Book, to: string, reminders: BookReminder[] = [])
   }
 }
 
-export function bookReminderStatus(entry: BookReminder): Status {
+function bookReminderStatus(entry: BookReminder): Status {
   return noticeStatus(entry, null)
 }
 

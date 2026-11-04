@@ -424,3 +424,23 @@ def test_a_notice_is_sent_as_robin_with_the_species_icon(theme: str) -> None:
     png = Path(__file__).parents[2] / "frontend" / "public" / f"robin-{theme}.png"
     assert icon.endswith(f"/frontend/public/{png.name}")
     assert png.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+
+async def test_every_notice_sent_is_kept_newest_first(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db.save_settings({**notify_to(), **IGDB})
+    settings = db.get_settings()
+    channel = settings.notices("games")
+    assert channel is not None
+    await notify.send(settings, channel, title="Dreadmoor has a release date", message="Soon.")
+    db.hold_notice("games", "Kept back", "Later.", "zzz", "https://x.test", None)
+    assert await notify.send_held() == 1
+
+    listed = (await client.get("/api/notices")).json()
+    assert [n["title"] for n in listed] == ["Kept back", "Dreadmoor has a release date"]
+    assert listed[0]["click"] == "https://x.test"
+
+    monkeypatch.setattr(db, "SENT_KEPT", 1)
+    await notify.send(settings, channel, title="Newest", message="Now.")
+    assert [n["title"] for n in db.sent_notices()] == ["Newest"]

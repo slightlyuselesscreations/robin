@@ -106,6 +106,7 @@ class SettingsOut(BaseModel):
     scheme: db.Scheme
     suwayomi_url: str
     suwayomi_source_id: str
+    suwayomi_add: bool
     qbittorrent_url: str
     has_qbittorrent_api_key: bool
     qbittorrent_category: str
@@ -196,6 +197,7 @@ class SettingsPatch(BaseModel):
     scheme: db.Scheme | None = None
     suwayomi_url: str | None = None
     suwayomi_source_id: str | None = Field(default=None, pattern=r"^-?\d*$")
+    suwayomi_add: bool | None = None
     qbittorrent_url: str | None = None
     qbittorrent_api_key: str | None = None
     qbittorrent_category: str | None = Field(default=None, min_length=1, max_length=200)

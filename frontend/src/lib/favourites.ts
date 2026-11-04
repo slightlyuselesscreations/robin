@@ -224,7 +224,6 @@ export function askStopFavourite(ask: StopAsk) {
   window.dispatchEvent(new CustomEvent(STOP_FAVOURITE, { detail: ask }))
 }
 
-/** Every maker hidden, as a favourite is kept. */
 /** Every maker always hidden or always shown. */
 export function useMakerFilters() {
   return useQuery({ queryKey: ['maker-filters'], queryFn: api.makerFilters })

@@ -22,7 +22,6 @@ import {
 } from '@/components/MediaDialog'
 import { IndexerSearch } from '@/components/IndexerSearch'
 import { Clip, Notice } from '@/components/Page'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { GAME_STATE, STATE_LABEL, api, posterUrl, releaseLabel, errorText } from '@/lib/api'
@@ -111,13 +110,12 @@ function Body({ igdbId, onClose }: { igdbId: number; onClose: () => void }) {
         >
           <div className="flex flex-wrap gap-1.5">
             {[...data.genres, ...(extra.themes ?? [])].slice(0, 6).map((tag) => (
-              <Badge
+              <span
                 key={tag}
-                variant="outline"
-                className="rounded-sm border-line bg-base text-2xs font-normal text-ink-dim"
+                className="rounded-sm border border-line bg-base px-2 py-0.5 text-2xs whitespace-nowrap text-ink-dim"
               >
                 {tag}
-              </Badge>
+              </span>
             ))}
           </div>
 

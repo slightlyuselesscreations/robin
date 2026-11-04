@@ -353,6 +353,7 @@ async def send(
         click=click,
         attach=attach,
     )
+    db.sent_notice(channel.category, title, message, click, attach)
 
 
 async def deliver(
@@ -467,8 +468,10 @@ async def send_held(now: datetime | None = None) -> int:
                 attach=one["attach"] if alone else None,
             )
         except NotifyError as exc:
-            log.warning("notify: %s kept notices wait: %s", category, exc)
+            log.warning("notify: %s kept notifications wait: %s", category, exc)
             continue
+        for row in rows:
+            db.sent_notice(category, row["title"], row["message"], row["click"], row["attach"])
         db.drop_held([int(r["id"]) for r in rows])
         sent += 1
     return sent

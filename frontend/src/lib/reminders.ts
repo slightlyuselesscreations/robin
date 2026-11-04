@@ -15,7 +15,7 @@ import { useSettings } from '@/lib/categories'
 import { calendarDay } from '@/lib/items'
 
 /** What a film's reminder can be for: one release type, or both. */
-export type ReminderChoice = ReleaseType | 'both'
+type ReminderChoice = ReleaseType | 'both'
 
 const CHOICE_LABEL: Record<ReminderChoice, string> = {
   theatrical: 'Cinema only',

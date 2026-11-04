@@ -69,6 +69,17 @@ export type Download = { state: string; progress: number; eta: number }
 export type Origin =
   { kind: 'favourite'; id: number | null; name: string | null } | { kind: Library | 'suwayomi' }
 
+/** A notice that went out, as Recently notified lists it. */
+export type SentNotice = {
+  id: number
+  category: Category
+  title: string
+  message: string
+  click: string | null
+  attach: string | null
+  sent_at: string
+}
+
 export type MonitoredGame = {
   id: number
   igdb_id: number
@@ -134,6 +145,7 @@ export type Settings = {
   /** Where monitored comic series are looked for. */
   suwayomi_url: string
   suwayomi_source_id: string
+  suwayomi_add: boolean
   /** Where matched games download. The username is empty when qBittorrent needs no sign in. */
   qbittorrent_url: string
   has_qbittorrent_api_key: boolean
@@ -238,7 +250,7 @@ export type Destination = {
   saved_places: Category[]
 }
 
-export type NotifyField = {
+type NotifyField = {
   key: string
   label: string
   example: string
@@ -273,7 +285,7 @@ export type Release = {
   flags: string[]
 }
 
-export type DiscoverPage = {
+type DiscoverPage = {
   games: Game[]
   next_offset: number | null
 }
@@ -324,7 +336,7 @@ export type Comic = {
 }
 
 /** Every issue of the current week, of every publisher. */
-export type ComicIssues = {
+type ComicIssues = {
   week: string
   /** Null for the week the first of this month falls in, the earliest listed. */
   previous: string | null
@@ -428,7 +440,7 @@ export type Reminder = {
 }
 
 /** A book's place in its series. */
-export type BookSeries = {
+type BookSeries = {
   id: number
   name: string
   position: number | null
@@ -460,7 +472,7 @@ export type Book = {
 /** A book's detail names its authors with their ids, to open each as a favourite. */
 export type BookDetail = Book & { headline: string; author_refs: Ref[] }
 
-export type BookPage = { books: Book[]; page: number; more: boolean }
+type BookPage = { books: Book[]; page: number; more: boolean }
 
 /** Monitor on a book: a notice ahead of its release. A series is followed by favouriting it. */
 export type BookReminder = {
@@ -504,7 +516,7 @@ export type GameFilters = {
   sort: 'date' | 'popularity'
 }
 
-export type GameExtra = {
+type GameExtra = {
   storyline?: string | null
   developers?: Ref[]
   publishers?: Ref[]
@@ -670,7 +682,7 @@ export function cancelled(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'NotAllowedError'
 }
 
-export type TotpSetup = { secret: string; uri: string; qr: string }
+type TotpSetup = { secret: string; uri: string; qr: string }
 
 /** Fired when a session has ended under a running app. The gate listens for it. */
 export const SIGNED_OUT = 'robin:signed-out'
@@ -759,7 +771,7 @@ export type Library = 'radarr' | 'sonarr'
 export const LIBRARY_NAME: Record<Library, string> = { radarr: 'Radarr', sonarr: 'Sonarr' }
 
 /** A film's cinema or digital release in Radarr, or a season premiere in Sonarr. */
-export type ArrRelease = {
+type ArrRelease = {
   category: 'screens'
   key: string
   title: string
@@ -797,7 +809,7 @@ export type ScreenTitle = {
   favourite?: string | null
 }
 
-export type ScreenPage = { titles: ScreenTitle[]; page: number; total_pages: number }
+type ScreenPage = { titles: ScreenTitle[]; page: number; total_pages: number }
 
 export type ScreenDetail = ScreenTitle & {
   tagline: string
@@ -921,7 +933,7 @@ export type Favourite = {
 }
 
 /** A favourite's dated release, for Home. `to` is its dialog parameter, `game=12`. */
-export type FavouriteRelease = {
+type FavouriteRelease = {
   category: FavouriteCategory
   key: string
   title: string
@@ -934,7 +946,7 @@ export type FavouriteRelease = {
 }
 
 /** One entity with what it has coming, in its category's own shape. */
-export type FavouriteDetail = {
+type FavouriteDetail = {
   entity: Entity
   favourite: Favourite | null
   releases: (Game | ScreenTitle | Book)[]
@@ -1056,6 +1068,7 @@ export const api = {
   removeFavourite: (id: number) => request<void>(`/api/favourites/${id}`, { method: 'DELETE' }),
   stopFavourite: (id: number) => post<{ stopped: number }>(`/api/favourites/${id}/stop`),
   logs: (after: number) => request<LogLine[]>(`/api/logs?after=${after}`),
+  notices: () => request<SentNotice[]>('/api/notices'),
   countdowns: () => request<Countdown[]>('/api/countdowns'),
   addCountdown: (target: CountdownTarget) => post<Countdown>('/api/countdowns', target),
   removeCountdown: (id: number) => request<void>(`/api/countdowns/${id}`, { method: 'DELETE' }),

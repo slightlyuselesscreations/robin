@@ -45,6 +45,7 @@ from robin.routes import games as games_routes
 from robin.routes import images as images_routes
 from robin.routes import logs as logs_routes
 from robin.routes import monitored as monitored_routes
+from robin.routes import notices as notices_routes
 from robin.routes import prowlarr as prowlarr_routes
 from robin.routes import qbittorrent as qbittorrent_routes
 from robin.routes import screen as screen_routes
@@ -254,6 +255,7 @@ app.include_router(books_routes.router)
 app.include_router(favourites_routes.router)
 app.include_router(countdowns_routes.router)
 app.include_router(logs_routes.router)
+app.include_router(notices_routes.router)
 
 
 @app.get("/api/health", tags=["health"])

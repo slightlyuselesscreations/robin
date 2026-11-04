@@ -1,10 +1,7 @@
-import { REGEXP_ONLY_DIGITS } from 'input-otp'
+import { Input } from '@/components/ui/input'
+import { INPUT, cn } from '@/lib/utils'
 
-import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
-
-const SLOTS = [0, 1, 2, 3, 4, 5]
-
-/** Six digits from an authenticator app. The id lands on the real input, for its label. */
+/** Six digits from an authenticator app. */
 export function CodeInput({
   id,
   value,
@@ -17,20 +14,14 @@ export function CodeInput({
   autoFocus?: boolean
 }) {
   return (
-    <InputOTP
+    <Input
       id={id}
-      maxLength={SLOTS.length}
-      pattern={REGEXP_ONLY_DIGITS}
-      value={value}
-      onChange={onChange}
+      inputMode="numeric"
       autoComplete="one-time-code"
+      value={value}
+      onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
       autoFocus={autoFocus}
-    >
-      <InputOTPGroup>
-        {SLOTS.map((index) => (
-          <InputOTPSlot key={index} index={index} />
-        ))}
-      </InputOTPGroup>
-    </InputOTP>
+      className={cn(INPUT, 'w-32 font-mono tracking-widest')}
+    />
   )
 }

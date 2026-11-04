@@ -249,7 +249,7 @@ export function MediaCard({
   )
 }
 
-export function MediaGrid({
+function MediaGrid({
   compact = false,
   children,
 }: {

@@ -339,6 +339,14 @@ async def notify_favourites(now: datetime | None = None) -> int:
 # ---------------------------------------------------------------- monitoring
 
 
+async def pass_over(settings: db.Settings, category: Category, kind: str, ids: list[int]) -> None:
+    """Under `future`, keep what a new favourite already has coming from being monitored. A read
+    that fails leaves it all to be monitored, as a new release would be."""
+    if settings.favourites_scope == "future":
+        for release in await coming(settings, category, kind, ids):
+            db.mark_favourite_monitored(category, _monitor_key(category, release))
+
+
 async def monitor_favourites() -> int:
     """Monitor each favourite's new release, in a category whose Monitor switch is on, once,
     each kept as from that favourite and told. A row monitored from a favourite before Robin

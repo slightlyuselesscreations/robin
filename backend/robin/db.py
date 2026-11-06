@@ -299,6 +299,7 @@ Theme = Literal[
     "black",
 ]
 Scheme = Literal["dark", "light", "system"]
+FavouritesScope = Literal["future", "all"]
 
 # A marker's slot after every other: every notice for its date was sent.
 SENT_ALL = "9999"
@@ -340,6 +341,7 @@ class Settings:
     suwayomi_url: str
     suwayomi_source_id: str
     suwayomi_add: bool
+    favourites_scope: FavouritesScope
     # What is downloading. The key is empty when qBittorrent lets the LAN in without one.
     qbittorrent_url: str
     qbittorrent_api_key: str

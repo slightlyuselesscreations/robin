@@ -107,6 +107,7 @@ class SettingsOut(BaseModel):
     suwayomi_url: str
     suwayomi_source_id: str
     suwayomi_add: bool
+    favourites_scope: db.FavouritesScope
     qbittorrent_url: str
     has_qbittorrent_api_key: bool
     qbittorrent_category: str
@@ -198,6 +199,7 @@ class SettingsPatch(BaseModel):
     suwayomi_url: str | None = None
     suwayomi_source_id: str | None = Field(default=None, pattern=r"^-?\d*$")
     suwayomi_add: bool | None = None
+    favourites_scope: db.FavouritesScope | None = None
     qbittorrent_url: str | None = None
     qbittorrent_api_key: str | None = None
     qbittorrent_category: str | None = Field(default=None, min_length=1, max_length=200)

@@ -66,12 +66,15 @@ query($source: LongString!, $title: String!) {
   }
 }"""
 
-# The library from one source, with how many issues Suwayomi lists for each, read from its own
-# database. Suwayomi's library updates keep that current, the source is not asked.
+# The library of every source, so a series is not read as gone when the configured source
+# changes, with how many issues Suwayomi lists for each, read from its own database. Suwayomi's
+# library updates keep that current, the source is not asked.
 LIBRARY = """
-query($source: LongString!) {
-  mangas(condition: {inLibrary: true, sourceId: $source}) {
-    nodes { id title thumbnailUrl chapters { totalCount } latestUploadedChapter { name } }
+query {
+  mangas(condition: {inLibrary: true}) {
+    nodes {
+      id title sourceId thumbnailUrl chapters { totalCount } latestUploadedChapter { name }
+    }
   }
 }"""
 
@@ -325,10 +328,11 @@ async def _quiet_sync() -> int:
 async def sync_library() -> int:
     """Follow the library from the configured source. Returns how many notices were sent.
 
-    Each series in it Robin has no row for is monitored, and each one Robin tracks that is no
-    longer in it is forgotten. An issue Suwayomi lists past the count kept is announced on the
-    comics topic, once. A waiting series Suwayomi already knows is added at once, rather than at
-    the hourly search of the source. Runs on every sync, and for a page, `sync_for_page`.
+    Each series from that source Robin has no row for is monitored, and each one Robin tracks
+    that no source holds in the library any more is forgotten. An issue Suwayomi lists past the
+    count kept is notified on the comics topic, once. A waiting series Suwayomi already knows is
+    added at once, rather than at the hourly search of the source. Runs on every sync, and for
+    a page, `sync_for_page`.
     """
     async with _syncing:
         return await _sync_library()
@@ -342,7 +346,7 @@ async def _sync_library() -> int:
         match = await find(settings, waiting["series"], int(waiting["year"]), live=False)
         if match and (waiting["suwayomi"] or match["inLibrary"]):
             await add_if_found(settings, waiting, match)
-    data = await gql(settings, LIBRARY, {"source": settings.suwayomi_source_id})
+    data = await gql(settings, LIBRARY, {})
     shelf = {int(m["id"]): _series(settings, m) for m in data["mangas"]["nodes"]}
     channel = settings.notices("comics")
     sent = 0
@@ -377,7 +381,8 @@ async def _sync_library() -> int:
         if count != row["chapters"]:
             db.set_comic_chapters(int(row["id"]), count)
     for found in shelf.values():
-        take_in(found, int(found["chapters"]["totalCount"]))
+        if str(found["sourceId"]) == settings.suwayomi_source_id:
+            take_in(found, int(found["chapters"]["totalCount"]))
     return sent
 
 

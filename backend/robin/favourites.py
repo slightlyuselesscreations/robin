@@ -513,7 +513,7 @@ async def notify_series(now: datetime | None = None) -> int:
     for row in db.rows("comics"):
         # Suwayomi announces each issue of a series added to it once it lists it,
         # `sync_library`, and nothing announces one while the source does not list it yet.
-        if not row["series_id"] or row["suwayomi"] or db.comic_tracked(settings, row):
+        if not row["series_id"] or (row["suwayomi"] and settings.suwayomi_ready):
             continue
         try:
             issues = await coming(settings, "comics", "series", [int(row["series_id"])])

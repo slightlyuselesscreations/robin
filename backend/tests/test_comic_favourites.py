@@ -150,6 +150,25 @@ async def test_a_series_is_monitored_once_and_every_new_issue_announced(
     assert await favourites.notify_series(shipped) == 0
 
 
+async def test_a_series_added_to_suwayomi_is_notified_from_metron_once_suwayomi_is_unset(
+    client: AsyncClient, fake: metron.Metron, delivered: list[dict[str, Any]]
+) -> None:
+    await client.put("/api/settings", json=notify_to())
+    issue = {
+        "id": "1",
+        "title": "Midnight Spider-Man #1",
+        "url": "https://metron.cloud/issue/1/",
+        "series_id": 100,
+        "week": metron.this_week().isoformat(),
+    }
+    await client.post("/api/comics/monitored", json=issue)
+    with db.conn() as c:
+        c.execute("UPDATE comics SET suwayomi = 1, suwayomi_id = 7, status = 'added'")
+
+    shipped = datetime.combine(comics.ships(metron.this_week()), time(10))
+    assert await favourites.notify_series(shipped) >= 1
+
+
 async def test_any_issue_opens_away_from_a_list(client: AsyncClient, fake: metron.Metron) -> None:
     found = (await client.get("/api/comics/comic/1")).json()
     assert found["title"] == "Midnight Spider-Man #1"

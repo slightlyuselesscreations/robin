@@ -196,8 +196,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 # A page asking for its data is answered at once with what was kept, however old, while its
-# source is asked again. The answer says so, and the page asks once more with FRESH_HEADER to
-# wait for the new one, which it offers to show when it differs.
+# source is asked again.
 async def serve_stale(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:

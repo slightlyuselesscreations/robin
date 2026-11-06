@@ -98,7 +98,6 @@ def suwayomi_stub(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             found = [m for m in state["known"] if term in m["title"].casefold()]
             return httpx.Response(200, json={"data": {"mangas": {"nodes": found}}})
         if "mangas(condition" in body["query"]:
-            assert variables["source"] == SOURCE
             return httpx.Response(200, json={"data": {"mangas": {"nodes": state["library"]}}})
         if "inLibrary: false" in body["query"]:
             state["removed"].append(variables["id"])
@@ -287,10 +286,13 @@ async def test_latest_is_kept_and_answered_at_once_while_it_is_asked_again(
     assert suwayomi_stub["kinds"] == ["LATEST", "LATEST"], "asked once behind the page"
 
 
-def shelved(manga_id: int, title: str, issues: int, latest: str | None = None) -> dict[str, Any]:
+def shelved(
+    manga_id: int, title: str, issues: int, latest: str | None = None, source: str = SOURCE
+) -> dict[str, Any]:
     return {
         "id": manga_id,
         "title": title,
+        "sourceId": source,
         "thumbnailUrl": f"/api/v1/manga/{manga_id}/thumbnail",
         "chapters": {"totalCount": issues},
         "latestUploadedChapter": {"name": latest or f"#{issues}"},
@@ -343,6 +345,21 @@ async def test_the_library_is_monitored_and_each_new_issue_announced_once(
     assert await suwayomi.sync_library() == 0
     assert (await client.get("/api/comics/monitored")).json() == []
     assert suwayomi_stub["removed"] == []
+
+
+async def test_a_series_of_another_source_stays_and_none_is_taken_in_from_it(
+    client: AsyncClient, suwayomi_stub: dict[str, Any]
+) -> None:
+    await suwayomi_on(client)
+    suwayomi_stub["library"] = [shelved(209, "Corpse Knight (2026-)", 6)]
+    await suwayomi.sync_library()
+
+    suwayomi_stub["library"] = [
+        shelved(209, "Corpse Knight (2026-)", 6, source="1"),
+        shelved(210, "Absolute Batman (2024-)", 6, source="1"),
+    ]
+    await suwayomi.sync_library()
+    assert [r["suwayomi_id"] for r in db.rows("comics")] == [209]
 
 
 async def test_a_waiting_series_the_library_holds_is_tracked_not_taken_in_twice(

@@ -25,4 +25,4 @@ CLAUDE.md
 .claude/
 compose.test.yml
 commit.md
-ship.ps1
+ship.*

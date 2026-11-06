@@ -21,7 +21,7 @@ export function CodeInput({
       value={value}
       onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
       autoFocus={autoFocus}
-      className={cn(INPUT, 'w-32 font-mono tracking-widest')}
+      className={cn(INPUT, 'font-mono tracking-widest')}
     />
   )
 }

@@ -439,7 +439,7 @@ export function FoundPanel() {
   if (sent.isPending) return <PanelLoading />
   if (!notices.length) return <PanelEmpty>Nothing notified yet.</PanelEmpty>
   return (
-    <ul className="divide-y divide-line">
+    <ul className="@container divide-y divide-line">
       {notices.map((notice) => (
         <NoticeRow key={notice.id} notice={notice} />
       ))}
@@ -465,7 +465,7 @@ function NoticeRow({ notice }: { notice: SentNotice }) {
           tag: null,
         }}
       />
-      <Clip className="hidden max-w-[40%] font-mono text-2xs text-ink-faint sm:block">
+      <Clip className="hidden max-w-[40%] font-mono text-2xs text-ink-faint @md:block">
         {notice.message}
       </Clip>
       <span className="shrink-0 text-xs font-medium text-ink-dim">{countdown(days)}</span>

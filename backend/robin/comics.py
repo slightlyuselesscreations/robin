@@ -20,7 +20,7 @@ from typing import Any
 
 import httpx
 
-from robin import __version__, db, hidden, notices, notify, updates, upstream
+from robin import __version__, db, hidden, notices, notify, suwayomi, updates, upstream
 
 log = logging.getLogger(__name__)
 
@@ -454,7 +454,9 @@ async def prefetch_weeks() -> int:
     lacking: set[int] = set()
     for week in (current + timedelta(weeks=n) for n in range(PREFETCH_WEEKS + 1)):
         try:
-            lacking |= lacking_publishers(await week_issues(week))
+            listed = await week_issues(week)
+            suwayomi.link(listed)
+            lacking |= lacking_publishers(listed)
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             log.warning("comics: listing every issue of %s failed: %s", week, exc)
     await read_publishers(lacking)

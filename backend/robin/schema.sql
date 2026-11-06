@@ -178,7 +178,8 @@ CREATE TABLE IF NOT EXISTS comics (
     suwayomi_id INTEGER,
     -- Issues on the source when the series was added. Zero means it was found before its first.
     issues      INTEGER,
-    -- Issues Suwayomi listed for it at the last library pass. One past it is announced.
+    -- The last issue accounted for, by its place in the series. One past it is notified once
+    -- it is downloaded.
     chapters    INTEGER,
     added_at    TEXT,
     -- Set when the Found panel on Monitored is cleared. Hides the row there and nowhere else.

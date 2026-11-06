@@ -294,15 +294,26 @@ async def test_latest_is_kept_and_answered_at_once_while_it_is_asked_again(
 
 
 def shelved(
-    manga_id: int, title: str, issues: int, latest: str | None = None, source: str = SOURCE
+    manga_id: int,
+    title: str,
+    issues: int,
+    downloaded: int | None = None,
+    source: str = SOURCE,
 ) -> dict[str, Any]:
+    """A library series, each of its issues downloaded up to `downloaded`, all by default."""
+    done = issues if downloaded is None else downloaded
     return {
         "id": manga_id,
         "title": title,
         "sourceId": source,
         "thumbnailUrl": f"/api/v1/manga/{manga_id}/thumbnail",
-        "chapters": {"totalCount": issues},
-        "latestUploadedChapter": {"name": latest or f"#{issues}"},
+        "chapters": {
+            "totalCount": issues,
+            "nodes": [
+                {"sourceOrder": n, "name": f"#{n}", "isDownloaded": n <= done}
+                for n in range(1, issues + 1)
+            ],
+        },
     }
 
 
@@ -352,6 +363,23 @@ async def test_the_library_is_monitored_and_each_new_issue_announced_once(
     assert await suwayomi.sync_library() == 0
     assert (await client.get("/api/comics/monitored")).json() == []
     assert suwayomi_stub["removed"] == []
+
+
+async def test_an_issue_is_notified_once_downloaded_and_back_issues_never(
+    client: AsyncClient, suwayomi_stub: dict[str, Any], delivered: list[dict[str, Any]]
+) -> None:
+    await suwayomi_on(client)
+    suwayomi_stub["library"] = [shelved(209, "Corpse Knight (2026-)", 6, downloaded=1)]
+    await suwayomi.sync_library()
+
+    # Its back issues finish downloading, and a new one is listed, not downloaded yet.
+    suwayomi_stub["library"] = [shelved(209, "Corpse Knight (2026-)", 7, downloaded=6)]
+    assert await suwayomi.sync_library() == 0
+
+    suwayomi_stub["library"] = [shelved(209, "Corpse Knight (2026-)", 7)]
+    assert await suwayomi.sync_library() == 1
+    assert delivered[-1]["title"] == "Corpse Knight #7"
+    assert await suwayomi.sync_library() == 0
 
 
 async def test_a_series_of_another_source_stays_and_none_is_taken_in_from_it(

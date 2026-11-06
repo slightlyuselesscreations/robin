@@ -119,6 +119,8 @@ async def coming(
         key += ":" + ",".join(map(str, sorted(shown)))
     ttl = COMICS_COMING_TTL if category == "comics" else COMING_TTL
     found: list[dict[str, Any]] = await db.remember(key, ttl, fetch)
+    if category == "comics":
+        suwayomi.link(found)
     if category == "screens":
         return await tmdb.unhidden(settings, found)
     if category == "books":

@@ -5,9 +5,9 @@ Robin tracks series, not issues. A series is monitored from its #1 on the Comics
 looked for on the configured Suwayomi source at once, then on every hourly pass while it is
 still waiting. The moment the source lists it, it is added to the library and announced on the
 comics topic, whether or not an issue is up yet. From there Suwayomi fetches and downloads its
-issues as they come out, and `sync_library` reads the library from the configured source on
-every sync: each series in it is monitored in Robin, each issue Suwayomi lists past the count
-kept is announced, and a series gone from it is forgotten.
+issues as they come out, and `sync_library` reads the library on every sync: each series in it
+from the configured source is monitored in Robin, each new issue is notified once it is
+downloaded, and a series gone from it is forgotten.
 """
 
 from __future__ import annotations
@@ -67,13 +67,15 @@ query($source: LongString!, $title: String!) {
 }"""
 
 # The library of every source, so a series is not read as gone when the configured source
-# changes, with how many issues Suwayomi lists for each, read from its own database. Suwayomi's
-# library updates keep that current, the source is not asked.
+# changes, with each issue Suwayomi lists, its place in the series and whether it is downloaded,
+# read from its own database. Suwayomi's library updates keep that current, the source is not
+# asked.
 LIBRARY = """
 query {
   mangas(condition: {inLibrary: true}) {
     nodes {
-      id title sourceId thumbnailUrl chapters { totalCount } latestUploadedChapter { name }
+      id title sourceId thumbnailUrl
+      chapters { totalCount nodes { sourceOrder name isDownloaded } }
     }
   }
 }"""
@@ -338,8 +340,9 @@ async def sync_library() -> int:
     """Follow the library from the configured source. Returns how many notices were sent.
 
     Each series from that source Robin has no row for is monitored, and each one Robin tracks
-    that no source holds in the library any more is forgotten. An issue Suwayomi lists past the
-    count kept is notified on the comics topic, once. A waiting series Suwayomi already knows is
+    that no source holds in the library any more is forgotten. An issue past the last one kept
+    is notified on the comics topic once it is downloaded, what the source had when the series
+    was added never. A waiting series Suwayomi already knows is
     added at once, rather than at the hourly search of the source. Runs on every sync, and for
     a page, `sync_for_page`.
     """
@@ -367,17 +370,25 @@ async def _sync_library() -> int:
                 log.info("suwayomi: %s left the library", row["series"])
             continue
         count = int(held["chapters"]["totalCount"])
-        if row["chapters"] is not None and count > row["chapters"] and channel is not None:
-            latest = (held.get("latestUploadedChapter") or {}).get("name") or ""
-            new = count - int(row["chapters"])
+        last = row["chapters"]
+        # shortcut: an issue downloaded after a later one is passed over, Suwayomi queues in order.
+        done = sorted(
+            (
+                c
+                for c in held["chapters"]["nodes"]
+                if c["isDownloaded"] and last is not None and c["sourceOrder"] > last
+            ),
+            key=lambda c: int(c["sourceOrder"]),
+        )
+        if done and channel is not None:
             try:
                 await notify.send(
                     settings,
                     channel,
                     about=db.Notified(row["series"], f"series={held['id']}", held["thumbnailUrl"]),
-                    title=f"{row['series']} {latest}".strip()
-                    if new == 1
-                    else f"{new} new issues of {row['series']}",
+                    title=f"{row['series']} {done[0]['name']}".strip()
+                    if len(done) == 1
+                    else f"{len(done)} new issues of {row['series']}",
                     message=held["title"],
                     tags="books",
                     click=held["url"],
@@ -387,7 +398,9 @@ async def _sync_library() -> int:
                 log.warning("suwayomi: notification for %s failed: %s", row["series"], exc)
                 continue
             sent += 1
-        if count != row["chapters"]:
+        if done:
+            db.set_comic_chapters(int(row["id"]), int(done[-1]["sourceOrder"]))
+        elif last is None or count < last:
             db.set_comic_chapters(int(row["id"]), count)
     for found in shelf.values():
         if str(found["sourceId"]) == settings.suwayomi_source_id:

@@ -96,8 +96,7 @@ export function GameMenu({
 }
 
 /**
- * Monitor the series an issue is of, add it to Suwayomi, or stop monitoring it. `week` is
- * unknown once monitored.
+ * Monitor the series an issue is of, add it to Suwayomi, or stop monitoring it.
  */
 export function ComicMenu({ comic, week }: { comic: Comic; week?: string }) {
   const monitored = useQuery({ queryKey: ['comics-monitored'], queryFn: api.monitoredComics })

@@ -113,7 +113,7 @@ const PAGE: Record<Category, PageOf> = {
           row,
           openAt(comicOpens(row).param, comicOpens(row).id),
         ),
-        menu: <ComicMenu comic={asComic(row)} />,
+        menu: <ComicMenu comic={asComic(row)} week={row.created_at.slice(0, 10)} />,
       },
     }),
   }),

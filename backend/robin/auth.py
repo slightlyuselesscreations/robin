@@ -304,6 +304,9 @@ def _client(request: Request) -> str:
 
 
 def _declared_length(request: Request) -> int:
+    """What a body says it is. One sent in chunks says nothing, so it counts as too large."""
+    if "transfer-encoding" in request.headers:
+        return MAX_RESTORE + 1
     try:
         return int(request.headers.get("content-length") or 0)
     except ValueError:

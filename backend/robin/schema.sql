@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS settings (
     suwayomi_url             TEXT NOT NULL DEFAULT '',
     suwayomi_source_id       TEXT NOT NULL DEFAULT '',
     suwayomi_add             INTEGER NOT NULL DEFAULT 0,
+    -- Where a favourite's new releases go: `notify` keeps them in Robin, `integrations` also
+    -- lets the add switches of Radarr, Sonarr and Suwayomi take them.
+    favourites_send          TEXT NOT NULL DEFAULT 'notify',
     qbittorrent_url          TEXT NOT NULL DEFAULT '',
     qbittorrent_api_key      TEXT NOT NULL DEFAULT '',
     qbittorrent_category     TEXT NOT NULL DEFAULT 'games',

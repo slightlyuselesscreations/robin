@@ -299,6 +299,7 @@ Theme = Literal[
     "black",
 ]
 Scheme = Literal["dark", "light", "system"]
+FavouritesSend = Literal["notify", "integrations"]
 
 # A marker's slot after every other: every notice for its date was sent.
 SENT_ALL = "9999"
@@ -340,6 +341,7 @@ class Settings:
     suwayomi_url: str
     suwayomi_source_id: str
     suwayomi_add: bool
+    favourites_send: FavouritesSend
     # What is downloading. The key is empty when qBittorrent lets the LAN in without one.
     qbittorrent_url: str
     qbittorrent_api_key: str
@@ -1876,21 +1878,6 @@ def unnamed_favourite_origins(category: Category) -> set[str]:
             " = 'favourite' AND json_extract(origin_json, '$.id') IS NULL"
         ).fetchall()
     return {row["key"] for row in found}
-
-
-def monitored_from(favourite_id: int) -> dict[Category, list[dict[str, Any]]]:
-    """Every row monitored from a favourite, by category."""
-    out: dict[Category, list[dict[str, Any]]] = {}
-    with conn() as c:
-        for category, (table, _) in ORIGIN_ROWS.items():
-            out[category] = [
-                dict(row)
-                for row in c.execute(
-                    f"SELECT * FROM {table} WHERE json_extract(origin_json, '$.id') = ?",
-                    (favourite_id,),
-                ).fetchall()
-            ]
-    return out
 
 
 def origin_counts() -> dict[int, int]:

@@ -1,15 +1,24 @@
 """Favourites in every category: finding them, starring them, and what each has coming."""
 
 import contextlib
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 
-from robin import db, favourites, upstream
-from robin.routes.common import FORGET, notify_now
+from robin import arr, db, favourites, notify, upstream
+from robin.routes.common import notify_now
 
 router = APIRouter(prefix="/api/favourites", tags=["favourites"])
+
+log = logging.getLogger(__name__)
+
+# What holds something a favourite put there, as `favourites.reach` names it.
+PLACES: dict[str, str] = {
+    **{str(app): name for app, name in arr.NAMES.items()},
+    "suwayomi": "Suwayomi",
+}
 
 
 class NewFavourite(BaseModel):
@@ -119,18 +128,71 @@ async def detail(category: favourites.Category, kind: str, source_id: int) -> di
     }
 
 
+def _favourite(favourite_id: int) -> dict[str, Any]:
+    found = next((f for f in db.favourites() if f["id"] == favourite_id), None)
+    if found is None:
+        raise HTTPException(status_code=404, detail="No such favourite")
+    return found
+
+
+@router.get("/{favourite_id}/reach")
+async def reach(favourite_id: int) -> dict[str, Any]:
+    """Everything removing a favourite could take with it, where each is, and the libraries that
+    could not be read."""
+    entries, unread = await favourites.reach(db.get_settings(), _favourite(favourite_id))
+    titles = [
+        {
+            "category": entry["category"],
+            "key": entry["key"],
+            "title": entry["title"],
+            "places": (["Robin"] if entry["rows"] else [])
+            + [PLACES[h] for h in [entry["held"]] if h],
+        }
+        for entry in entries
+    ]
+    return {"titles": titles, "unread": unread}
+
+
+class Stop(BaseModel):
+    delete_files: bool = False
+
+
+async def _tell_failed(
+    settings: db.Settings, category: db.Category, failed: list[dict[str, Any]]
+) -> None:
+    """Notify of what an integration refused to remove, in one notification."""
+    channel = settings.notices(category)
+    if channel is None or not failed:
+        return
+    places = sorted({PLACES[entry["held"]] for entry in failed})
+    try:
+        await notify.send(
+            settings,
+            channel,
+            about=[db.Notified(entry["title"], "") for entry in failed],
+            title=f"Could not remove {len(failed)} from {' and '.join(places)}",
+            message="\n".join(entry["title"] for entry in failed),
+            tags=favourites.TAGS[category],
+        )
+    except notify.NotifyError as exc:
+        log.warning("favourites: could not tell of a failed removal: %s", exc)
+
+
 @router.post("/{favourite_id}/stop")
-async def stop_monitored(favourite_id: int) -> dict[str, int]:
-    """Stop monitoring every title Robin monitored from a favourite, as each one's Stop
-    monitoring would, the favourite itself kept or not. Returns how many rows went."""
+async def stop_monitored(favourite_id: int, body: Stop) -> dict[str, int]:
+    """Take everything a favourite put anywhere out of Robin and every integration holding it,
+    before the favourite goes. One an integration refuses stays, and is notified."""
     settings = db.get_settings()
+    favourite = _favourite(favourite_id)
+    entries, _ = await favourites.reach(settings, favourite)
     stopped = 0
-    for category, rows in db.monitored_from(favourite_id).items():
-        table = db.ORIGIN_ROWS[category][0]
-        for row in rows:
-            forget = FORGET.get(table)
-            if forget is not None:
-                await forget(settings, row)
-            db.delete_row(table, int(row["id"]))
+    failed: list[dict[str, Any]] = []
+    for entry in entries:
+        try:
+            await favourites.remove_everywhere(settings, entry, body.delete_files)
             stopped += 1
-    return {"stopped": stopped}
+        except upstream.UpstreamError as exc:
+            log.warning("favourites: could not remove %s: %s", entry["title"], exc)
+            failed.append(entry)
+    await _tell_failed(settings, favourite["category"], failed)
+    return {"stopped": stopped, "failed": len(failed)}

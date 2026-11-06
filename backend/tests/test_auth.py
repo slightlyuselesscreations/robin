@@ -363,3 +363,12 @@ async def test_a_local_client_still_signs_in(anon: AsyncClient) -> None:
     # The in process transport reports 127.0.0.1 as the client.
     assert (await anon.get("/api/monitored")).status_code == 401
     assert (await anon.get("/api/auth/me")).json()["signed_in"] is False
+
+
+async def test_a_body_sent_in_chunks_is_refused_unread(client: AsyncClient) -> None:
+    resp = await client.post(
+        "/api/auth/login",
+        headers={"X-Robin": "1", "Transfer-Encoding": "chunked"},
+        content=b"{}",
+    )
+    assert resp.status_code == 413

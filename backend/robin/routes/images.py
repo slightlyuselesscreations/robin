@@ -110,16 +110,24 @@ def prune() -> int:
 
 @router.get("/remote", response_model=None)
 async def remote(url: str) -> FileResponse | RedirectResponse:
-    """A source's image by its URL, or one under Suwayomi's address. Any other is redirected to.
+    """A source's image by its URL, or one under Suwayomi's address. One under another
+    integration's is redirected to, and any other refused, so Robin sends nobody elsewhere.
 
     A Suwayomi cover has no extension and is kept as .jpg, which the browser reads by its bytes.
     """
-    parsed = httpx.URL(url)
+    try:
+        parsed = httpx.URL(url)
+    except httpx.InvalidURL as exc:
+        raise HTTPException(status_code=400, detail="Not an image URL") from exc
     if parsed.scheme not in ("http", "https"):
         raise HTTPException(status_code=400, detail="Not an image URL")
-    suwayomi = db.get_settings().suwayomi_url
+    settings = db.get_settings()
+    suwayomi = settings.suwayomi_url
     if parsed.host not in REMOTE_HOSTS and not (suwayomi and url.startswith(f"{suwayomi}/")):
-        return RedirectResponse(url)
+        addresses = (getattr(settings, name) for name in db.URL_FIELDS)
+        if any(a and url.startswith(f"{a}/") for a in addresses):
+            return RedirectResponse(url)
+        raise HTTPException(status_code=404, detail="No such image")
 
     suffix = Path(parsed.path).suffix.lower()
     if suffix not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
@@ -159,13 +167,16 @@ async def image(size: str, image_id: str) -> FileResponse:
     if not fresh:
         try:
             resp = await igdb.client().get(igdb.image_url(image_id, size))
+            if resp.status_code == 200:
+                _write(path, resp.content)
+            elif not path.exists():
+                raise HTTPException(status_code=404, detail="No such image")
         except httpx.HTTPError as exc:
-            raise HTTPException(
-                status_code=502, detail=f"Could not reach IGDB images: {exc}"
-            ) from exc
-        if resp.status_code != 200:
-            raise HTTPException(status_code=404, detail="No such image")
-        _write(path, resp.content)
+            # An old cover beats none while IGDB is down.
+            if not path.exists():
+                raise HTTPException(
+                    status_code=502, detail=f"Could not reach IGDB images: {exc}"
+                ) from exc
 
     return FileResponse(
         path,

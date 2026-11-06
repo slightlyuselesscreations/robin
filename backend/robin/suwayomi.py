@@ -357,12 +357,16 @@ async def _sync_library() -> int:
             await add_if_found(settings, waiting, match)
     data = await gql(settings, LIBRARY, {})
     shelf = {int(m["id"]): _series(settings, m) for m in data["mangas"]["nodes"]}
+    # An empty library is a Suwayomi reinstalled or restored, far likelier than every series gone.
+    emptied = not shelf
+    if emptied:
+        log.warning("suwayomi: the library is empty, nothing is forgotten")
     channel = settings.notices("comics")
     sent = 0
     for row in db.rows("comics"):
         held = shelf.pop(int(row["suwayomi_id"]), None) if row["suwayomi_id"] else None
         if held is None:
-            if row["status"] == "added" and row["suwayomi_id"]:
+            if row["status"] == "added" and row["suwayomi_id"] and not emptied:
                 db.delete_row("comics", int(row["id"]))
                 log.info("suwayomi: %s left the library", row["series"])
             continue

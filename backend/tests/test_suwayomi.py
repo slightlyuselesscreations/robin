@@ -9,7 +9,7 @@ import httpx
 import pytest
 from httpx import AsyncClient
 
-from robin import db, suwayomi
+from robin import comics, db, suwayomi
 from tests.conftest import notify_to, stub_http
 
 SOURCE = "7185601298150078890"
@@ -358,8 +358,13 @@ async def test_the_library_is_monitored_and_each_new_issue_announced_once(
     assert await suwayomi.sync_library() == 1
     assert delivered[-1]["title"] == "2 new issues of Corpse Knight"
 
-    # Gone from the library, gone from Robin.
+    # An empty library is not read as everything gone.
     suwayomi_stub["library"] = []
+    assert await suwayomi.sync_library() == 0
+    assert len(db.rows("comics")) == 1
+
+    # Gone from the library, gone from Robin.
+    suwayomi_stub["library"] = [shelved(300, "Elsewhere (2026-)", 1, source="1")]
     assert await suwayomi.sync_library() == 0
     assert (await client.get("/api/comics/monitored")).json() == []
     assert suwayomi_stub["removed"] == []
@@ -580,3 +585,38 @@ async def test_with_its_switch_on_monitor_adds_to_suwayomi(
     monitored = (await client.post("/api/comics/monitored", json=first)).json()
     assert (monitored["status"], monitored["suwayomi"]) == ("tracking", 1)
     assert suwayomi_stub["added"] == [1954]
+
+
+async def test_removing_what_a_favourite_added_takes_it_out_of_suwayomi_too(
+    client: AsyncClient,
+    suwayomi_stub: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    delivered: list[dict[str, Any]],
+) -> None:
+    async def nothing_coming(kind: str, ids: list[int]) -> list[dict[str, Any]]:
+        return []
+
+    monkeypatch.setattr(comics, "favourite_releases", nothing_coming)
+    await suwayomi_on(client)
+    star = db.add_favourite("comics", "publisher", 1, "Marvel", None)
+    suwayomi_stub["library"] = [shelved(209, "Corpse Knight (2026-)", 6)]
+    await suwayomi.sync_library()
+    why = {"kind": "favourite", "id": star["id"], "name": "Marvel"}
+    with db.conn() as c:
+        c.execute("UPDATE comics SET origin_json = ?", (json.dumps(why),))
+
+    [reached] = (await client.get(f"/api/favourites/{star['id']}/reach")).json()["titles"]
+    assert reached["places"] == ["Robin", "Suwayomi"]
+
+    async def refused(settings: Any, manga_id: int) -> None:
+        raise suwayomi.SuwayomiError("down")
+
+    with monkeypatch.context() as down:
+        down.setattr(suwayomi, "remove_from_library", refused)
+        stopped = await client.post(f"/api/favourites/{star['id']}/stop", json={})
+    assert stopped.json() == {"stopped": 0, "failed": 1}
+    assert delivered[-1]["title"] == "Could not remove 1 from Suwayomi"
+    stopped = await client.post(f"/api/favourites/{star['id']}/stop", json={})
+    assert stopped.json() == {"stopped": 1, "failed": 0}
+    assert suwayomi_stub["removed"] == [209]
+    assert db.rows("comics") == []

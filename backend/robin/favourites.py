@@ -254,15 +254,94 @@ async def dated(settings: db.Settings) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------- notices
 
 
+def _row_key(category: Category, row: dict[str, Any]) -> str | None:
+    """A monitored row by `_monitor_key`, None for a comic series no Metron series names."""
+    if category == "games":
+        return str(row["igdb_id"])
+    if category == "comics":
+        return f"series-{row['series_id']}" if row["series_id"] else None
+    if category == "screens":
+        return f"{row['kind']}-{row['tmdb_id']}"
+    return str(row["hardcover_id"])
+
+
 def _monitored(category: Category) -> set[str]:
     """The titles the user monitors, by `_monitor_key`."""
-    if category == "games":
-        return {str(r["igdb_id"]) for r in db.rows("requests")}
-    if category == "comics":
-        return {f"series-{r['series_id']}" for r in db.rows("comics") if r["series_id"]}
-    if category == "screens":
-        return {f"{r['kind']}-{r['tmdb_id']}" for r in db.rows("reminders")}
-    return {str(r["hardcover_id"]) for r in db.rows("book_reminders")}
+    keys = (_row_key(category, r) for r in db.rows(db.ORIGIN_ROWS[category][0]))
+    return {key for key in keys if key}
+
+
+def _row_title(category: Category, row: dict[str, Any]) -> str:
+    names = {"games": "game_name", "comics": "series", "screens": "title", "books": "title"}
+    return str(row[names[category]])
+
+
+async def reach(
+    settings: db.Settings, favourite: dict[str, Any]
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Everything a favourite put anywhere, each with its `rows` in Robin and the integration
+    `held` by it: what was monitored from it, and what it has coming that a library holds. What
+    the user monitored, or another favourite did, is not its own. Beside it, the libraries that
+    could not be read, whose titles it cannot name."""
+    held: dict[str, str] = {}
+    unread: list[str] = []
+    if settings.radarr_ready or settings.sonarr_ready:
+        try:
+            held = dict(await arr.library(settings))
+        except upstream.UpstreamError as exc:
+            log.warning("favourites: could not read the libraries: %s", exc)
+            unread = [name for app, name in arr.NAMES.items() if arr.ready(settings, app)]
+    found: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def take(category: Category, key: str, title: str, rows: list[dict[str, Any]]) -> None:
+        entry = {"category": category, "key": key, "title": title, "rows": []}
+        kept = found.setdefault((category, key), entry)["rows"]
+        kept += [r for r in rows if r["id"] not in {k["id"] for k in kept}]
+
+    for category, (table, _) in db.ORIGIN_ROWS.items():
+        for row in db.rows(table):
+            if (row["origin"] or {}).get("id") == favourite["id"]:
+                key = _row_key(category, row) or f"row-{row['id']}"
+                take(category, key, _row_title(category, row), [row])
+
+    mine: Category = favourite["category"]
+    by_key: dict[str | None, list[dict[str, Any]]] = {}
+    for row in db.rows(db.ORIGIN_ROWS[mine][0]):
+        by_key.setdefault(_row_key(mine, row), []).append(row)
+    titles: list[dict[str, Any]] = []
+    try:
+        titles = await coming(settings, mine, favourite["kind"], favourite["ids"])
+    except Exception as exc:  # noqa: BLE001
+        log.warning("favourites: could not read %s: %s", favourite["name"], exc)
+    for release in titles:
+        key = _monitor_key(mine, release)
+        rows = by_key.get(key, [])
+        others = any(not r["origin"] or r["origin"].get("id") for r in rows)
+        wanted = new_series(mine, favourite["kind"], release)
+        if wanted and not others and (rows or (mine == "screens" and key in held)):
+            take(mine, key, _brief(mine, release)["title"], rows)
+
+    for entry in found.values():
+        in_suwayomi = any(r.get("suwayomi_id") for r in entry["rows"])
+        comic = entry["category"] == "comics" and in_suwayomi and settings.suwayomi_ready
+        entry["held"] = "suwayomi" if comic else held.get(entry["key"])
+    return list(found.values()), unread
+
+
+async def remove_everywhere(
+    settings: db.Settings, entry: dict[str, Any], delete_files: bool
+) -> None:
+    """Take one of `reach` out of the integration holding it, then out of Robin."""
+    if entry["held"] == "suwayomi":
+        for row in entry["rows"]:
+            if row.get("suwayomi_id"):
+                await suwayomi.remove_from_library(settings, int(row["suwayomi_id"]))
+    elif entry["held"]:
+        kind, tmdb_id = entry["key"].split("-")
+        await arr.remove(settings, kind, int(tmdb_id), delete_files)
+    table = db.ORIGIN_ROWS[entry["category"]][0]
+    for row in entry["rows"]:
+        db.delete_row(table, int(row["id"]))
 
 
 def _monitor_key(category: Category, release: dict[str, Any]) -> str:
@@ -452,13 +531,18 @@ async def _tell_monitored(
 
 
 async def _monitor(settings: db.Settings, category: Category, release: dict[str, Any]) -> bool:
-    """Monitor one release as its dialog's Monitor would, every variant it allows. False when
-    there is nothing to monitor yet, a film with no release in the region."""
+    """Monitor one release as its dialog's Monitor would, every variant it allows, reaching an
+    integration only while `favourites_send` lets it. False when there is nothing to monitor
+    yet, a film with no release in the region."""
+    send = settings.favourites_send == "integrations"
     if category == "games":
+        # A monitored game is grabbed, so one only notified stays the favourite's release.
+        if settings.prowlarr_ready and not send:
+            return False
         db.create_request(int(release["igdb_id"]))
         return True
     if category == "comics":
-        await monitor_series(settings, release)
+        await monitor_series(settings, release, auto_add=send)
         return True
     if category == "books":
         db.add_book_reminder(
@@ -471,20 +555,24 @@ async def _monitor(settings: db.Settings, category: Category, release: dict[str,
         )
         return True
     made = await reminders.monitor_title(settings, release["kind"], int(release["id"]))
-    if made:
+    if made and send:
         await arr.follow(settings, release["kind"], int(release["id"]))
     return made
 
 
 async def monitor_series(
-    settings: db.Settings, issue: dict[str, Any], *, to_suwayomi: bool = False
+    settings: db.Settings,
+    issue: dict[str, Any],
+    *,
+    to_suwayomi: bool = False,
+    auto_add: bool = True,
 ) -> dict[str, Any]:
     """Monitor the series an issue is of, each new issue announced from Metron. With
-    `to_suwayomi`, or with `suwayomi_add` on, it is added to Suwayomi instead,
+    `to_suwayomi`, or with `suwayomi_add` on and `auto_add`, it is added to Suwayomi instead,
     looked for at once and on every pass until the source lists it, and Suwayomi alone announces
     its issues. Either way, a series the library already holds is tracked from there, so its
     issues are never announced twice."""
-    to_suwayomi = to_suwayomi or (settings.suwayomi_add and settings.suwayomi_ready)
+    to_suwayomi = to_suwayomi or (auto_add and settings.suwayomi_add and settings.suwayomi_ready)
     series = suwayomi.series_title(issue["title"])
     comic = db.monitor_comic(
         issue_id=issue["id"],

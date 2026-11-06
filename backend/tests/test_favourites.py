@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 
-from robin import db, favourites, hardcover, hidden, igdb, tmdb
+from robin import arr, db, favourites, hardcover, hidden, igdb, reminders, tmdb, upstream
 from robin.routes.common import decorate
 from tests.conftest import notify_to
 
@@ -139,9 +139,10 @@ async def test_what_a_favourite_monitored_is_kept_as_its_own_told_and_stopped(
     assert counted["monitored"] == 1
 
     # Stopping what it monitored leaves the user's own.
-    await client.delete(f"/api/favourites/{star['id']}")
-    stopped = await client.post(f"/api/favourites/{star['id']}/stop")
-    assert stopped.json() == {"stopped": 1}
+    [reached] = (await client.get(f"/api/favourites/{star['id']}/reach")).json()["titles"]
+    assert (reached["title"], reached["places"]) == ("Book 1", ["Robin"])
+    stopped = await client.post(f"/api/favourites/{star['id']}/stop", json={})
+    assert stopped.json() == {"stopped": 1, "failed": 0}
     assert [r["hardcover_id"] for r in db.rows("book_reminders")] == [9]
 
 
@@ -438,3 +439,59 @@ async def test_a_person_has_coming_what_they_are_starred_on(
     coming = await tmdb.favourite_releases(db.get_settings(), "person", [1])
     assert [t["title"] for t in coming] == ["Frisco King"]
     assert hidden.credited({"created_by": [{"id": 1}]})["person"] == {1}
+
+
+async def test_removing_everywhere_asks_the_app_holding_a_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked: list[tuple[str, int, bool]] = []
+
+    async def remove(settings: Any, kind: str, tmdb_id: int, delete_files: bool) -> bool:
+        asked.append((kind, tmdb_id, delete_files))
+        return True
+
+    monkeypatch.setattr(arr, "remove", remove)
+    entry = {"category": "screens", "key": "movie-5", "held": "radarr", "rows": []}
+    await favourites.remove_everywhere(db.get_settings(), entry, True)
+    assert asked == [("movie", 5, True)]
+
+
+@pytest.mark.parametrize(("send", "sent"), [("notify", []), ("integrations", [("movie", 5)])])
+async def test_a_favourites_release_reaches_an_integration_only_when_sent(
+    monkeypatch: pytest.MonkeyPatch, send: str, sent: list[tuple[str, int]]
+) -> None:
+    followed: list[tuple[str, int]] = []
+
+    async def monitor_title(settings: Any, kind: str, tmdb_id: int) -> bool:
+        return True
+
+    async def follow(settings: Any, kind: str, tmdb_id: int) -> None:
+        followed.append((kind, tmdb_id))
+
+    monkeypatch.setattr(reminders, "monitor_title", monitor_title)
+    monkeypatch.setattr(arr, "follow", follow)
+    configure(favourites_send=send)
+    await favourites._monitor(db.get_settings(), "screens", {"kind": "movie", "id": 5})
+    assert followed == sent
+
+
+async def test_a_game_only_notified_is_not_monitored_while_prowlarr_would_grab_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure(prowlarr_url="http://prowlarr.test", prowlarr_api_key="key")
+    assert db.get_settings().prowlarr_ready
+    assert not await favourites._monitor(db.get_settings(), "games", {"igdb_id": 5})
+    assert db.rows("requests") == []
+
+
+async def test_a_library_that_cannot_be_read_is_named(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch, coming: dict[str, Any]
+) -> None:
+    async def down(settings: Any) -> dict[str, str]:
+        raise upstream.UpstreamError("down")
+
+    monkeypatch.setattr(arr, "library", down)
+    configure(tmdb_token="eyJ.token", radarr_url="http://radarr.test", radarr_api_key="key")
+    star = db.add_favourite("books", "author", 7, "Some Writer", None)
+    reached = (await client.get(f"/api/favourites/{star['id']}/reach")).json()
+    assert reached == {"titles": [], "unread": ["Radarr"]}

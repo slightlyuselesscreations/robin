@@ -82,6 +82,9 @@ export type SentNotice = {
   sent_at: string
 }
 
+/** What removing a favourite could take with it, and where each is. */
+export type Reached = { category: Category; key: string; title: string; places: string[] }
+
 export type MonitoredGame = {
   id: number
   igdb_id: number
@@ -127,6 +130,7 @@ export type Theme =
   | 'black'
 /** Dark, light, or whichever the system is set to. */
 export type Scheme = 'dark' | 'light' | 'system'
+export type FavouritesSend = 'notify' | 'integrations'
 
 export type Settings = {
   twitch_client_id: string
@@ -148,6 +152,7 @@ export type Settings = {
   suwayomi_url: string
   suwayomi_source_id: string
   suwayomi_add: boolean
+  favourites_send: FavouritesSend
   /** Where matched games download. The username is empty when qBittorrent needs no sign in. */
   qbittorrent_url: string
   has_qbittorrent_api_key: boolean
@@ -1052,7 +1057,10 @@ export const api = {
     post<Favourite>('/api/favourites', { category, kind, id }),
   favouritesComing: () => request<FavouriteRelease[]>('/api/favourites/coming'),
   removeFavourite: (id: number) => request<void>(`/api/favourites/${id}`, { method: 'DELETE' }),
-  stopFavourite: (id: number) => post<{ stopped: number }>(`/api/favourites/${id}/stop`),
+  favouriteReach: (id: number) =>
+    request<{ titles: Reached[]; unread: string[] }>(`/api/favourites/${id}/reach`),
+  stopFavourite: (id: number, delete_files: boolean) =>
+    post<{ stopped: number; failed: number }>(`/api/favourites/${id}/stop`, { delete_files }),
   logs: (after: number) => request<LogLine[]>(`/api/logs?after=${after}`),
   notices: () => request<SentNotice[]>('/api/notices'),
   countdowns: () => request<Countdown[]>('/api/countdowns'),

@@ -24,11 +24,9 @@ import {
   type MakerFilter,
   type MakerMode,
   type Role,
-  type ScreenTitle,
   api,
   errorText,
 } from '@/lib/api'
-import { askArrRemove, heldOf, useLibrary } from '@/lib/arr'
 import { CATEGORY, useSearchable } from '@/lib/categories'
 
 /** What each kind of favourite is called where a list of them is shown. */
@@ -174,54 +172,48 @@ export function useFavourites() {
 }
 
 /**
- * Whether one entity is a favourite, and starring or unstarring it. Every list draws its stars
- * from the server, so a change refreshes whatever is on screen.
+ * Whether one entity is a favourite, and starring it. Unstarring always asks first, through
+ * `FavouriteStopDialog`, what goes with it. Every list draws its stars from the server, so a
+ * change refreshes whatever is on screen.
  */
 export function useFavourite(entity: Pick<Entity, 'category' | 'kind' | 'id'>) {
   const queryClient = useQueryClient()
   const favourites = useFavourites()
-  const inLibrary = useLibrary()
   const mine = findFavourite(favourites.data, entity)
-  const toggle = useMutation({
-    mutationFn: async () => {
-      if (mine) {
-        await api.removeFavourite(mine.id)
-        return false
-      }
-      await api.addFavourite(entity.category, entity.kind, entity.id)
-      return true
-    },
-    onSuccess: async (on) => {
-      toast.success(on ? 'Added to favourites' : 'Removed from favourites')
-      if (on || !mine) return
-      // What it has coming that Radarr or Sonarr holds is asked about, never left without a word.
-      const held =
-        entity.category === 'screens'
-          ? heldOf(
-              inLibrary,
-              (await api.favourite(entity.category, entity.kind, entity.id))
-                .releases as ScreenTitle[],
-            )
-          : []
-      // Then what Robin monitored from it, after, so one question is up at a time.
-      if (mine.monitored) askStopFavourite({ id: mine.id, then: () => askArrRemove(held) })
-      else askArrRemove(held)
-    },
+  const star = useMutation({
+    mutationFn: () => api.addFavourite(entity.category, entity.kind, entity.id),
+    onSuccess: () => toast.success('Added to favourites'),
     onError: (error: unknown) =>
       toast.error('Could not change the favourite', { description: errorText(error) }),
     onSettled: () => void queryClient.invalidateQueries(),
   })
+  const toggle = {
+    isPending: star.isPending,
+    mutate: () => (mine ? askStopFavourite(mine) : star.mutate()),
+  }
   return { favourite: mine, loaded: favourites.isSuccess, toggle }
 }
 
-/** Fired to ask whether to stop what Robin monitored from a favourite just removed. */
 export const STOP_FAVOURITE = 'robin:stop-favourite'
 
-export type StopAsk = { id: number; then: () => void }
+/** `then` runs once the favourite has gone, never when the question is cancelled. */
+export type StopAsk = Pick<Favourite, 'id' | 'name'> & { then?: () => void }
 
 /** Ask, through `FavouriteStopDialog`, whether to stop what Robin monitored from a favourite. */
 export function askStopFavourite(ask: StopAsk) {
   window.dispatchEvent(new CustomEvent(STOP_FAVOURITE, { detail: ask }))
+}
+
+/** Hiding a maker unstars it, so a favourite is asked about first. */
+export function askBeforeHiding(
+  favourites: Favourite[] | undefined,
+  entity: Pick<Entity, 'category' | 'kind' | 'id'>,
+  mode: MakerMode,
+  change: () => void,
+) {
+  const starred = mode === 'hide' ? findFavourite(favourites, entity) : null
+  if (starred) askStopFavourite({ id: starred.id, name: starred.name, then: change })
+  else change()
 }
 
 /** Every maker always hidden or always shown. */
@@ -238,8 +230,9 @@ const FILTERED: Record<MakerMode, string> = { hide: 'Always hidden', show: 'Alwa
 export function useMakerFilter(entity: Pick<Entity, 'category' | 'kind' | 'id'>) {
   const queryClient = useQueryClient()
   const filters = useMakerFilters()
+  const favourites = useFavourites()
   const mine = findFavourite(filters.data, entity) as MakerFilter | undefined
-  const set = useMutation({
+  const change = useMutation({
     mutationFn: async (mode: MakerMode) => {
       if (mine?.mode === mode) {
         await api.unfilterMaker(mine.id)
@@ -253,6 +246,13 @@ export function useMakerFilter(entity: Pick<Entity, 'category' | 'kind' | 'id'>)
       toast.error('Could not change it', { description: errorText(error) }),
     onSettled: () => void queryClient.invalidateQueries(),
   })
+  const set = {
+    isPending: change.isPending,
+    mutate: (mode: MakerMode) =>
+      mine?.mode === mode
+        ? change.mutate(mode)
+        : askBeforeHiding(favourites.data, entity, mode, () => change.mutate(mode)),
+  }
   return { mode: mine?.mode ?? null, loaded: filters.isSuccess, set }
 }
 

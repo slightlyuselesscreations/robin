@@ -84,6 +84,7 @@ import {
   type FavouriteKind,
   type MakerMode,
   GAME_PLATFORMS,
+  type FavouritesSend,
   type Health,
   LIBRARY_NAME,
   type Library as Arr,
@@ -104,7 +105,13 @@ import {
 } from '@/lib/api'
 import { useSettings } from '@/lib/categories'
 import { riseAt } from '@/lib/motion'
-import { KINDS, KIND_LABEL, useMakerFilters } from '@/lib/favourites'
+import {
+  KINDS,
+  KIND_LABEL,
+  askBeforeHiding,
+  useFavourites,
+  useMakerFilters,
+} from '@/lib/favourites'
 import { say } from '@/lib/say'
 import { SCHEMES, THEMES, logo, useTheme } from '@/lib/theme'
 import { day } from '@/lib/items'
@@ -397,6 +404,98 @@ function SecretField({
 }
 
 /** Only what every category shares: the theme, the account, and where notifications go. */
+const FAVOURITES_SEND: Record<FavouritesSend, { label: string; detail: string }> = {
+  notify: {
+    label: 'New releases from a favourite are only notified',
+    detail:
+      'You hear about them from Robin, and nothing reaches Radarr, Sonarr or Suwayomi. Good for big favourites, like Marvel or Netflix.',
+  },
+  integrations: {
+    label: 'New releases from a favourite are sent to integrations',
+    detail:
+      'If each category\'s "Automatically add" switch is on for its configurable integrations, then every favourite for that category will also be automatically sent to its integration. Following the Wolverine example before, this would make it so every single comic with him in them, will be automatically added to your Suwayomi library. This can generate a lot of data.',
+  },
+}
+
+function BehaviorPanel({ form, setForm }: TabProps) {
+  return (
+    <Panel title="Favourites" icon={Star}>
+      <Select
+        value={form.favourites_send ?? 'notify'}
+        onValueChange={(next) => setForm({ ...form, favourites_send: next as FavouritesSend })}
+      >
+        <SelectTrigger className="w-full border-line bg-base">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {Object.entries(FAVOURITES_SEND).map(([value, { label }]) => (
+            <SelectItem key={value} value={value}>
+              {label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Panel>
+  )
+}
+
+/** Setup's explanation of favourites, and the one decision they need. */
+function FavouritesStep({ form, setForm }: TabProps) {
+  const picked = form.favourites_send ?? 'notify'
+  return (
+    <div className="space-y-6 text-center">
+      <Rise i={0} className="space-y-3 text-sm text-ink-dim">
+        <p>
+          Favourites are one of Robin&apos;s most powerful features. They allow you to keep track of
+          items like a whole comics publisher, a movie studio, a TV network or even an actor. Going
+          as far as tracking a single character.
+        </p>
+        <p>
+          Once that item is favourited, Robin will keep track of anything that the item has in store
+          for the future. For example: if I place &quot;Denis Villeneuve&quot; as a favourited
+          person. Robin will keep track any movie this director will work on.
+        </p>
+        <p>
+          The same goes for more meta item, like a character. For example: If I favourited
+          &quot;Wolverine&quot; as a comic character, any comic where he stars in, will be tracked.
+        </p>
+        <p>
+          Due to how powerful this feature is, and how it can interact with your configured
+          integrations (Like Sonarr, Radarr, Suwayomi), you must make the following decision:
+        </p>
+      </Rise>
+      <div className="space-y-3">
+        {(Object.keys(FAVOURITES_SEND) as FavouritesSend[]).map((value, i) => (
+          <Rise key={value} i={i + 1} className="">
+            <button
+              type="button"
+              aria-pressed={picked === value}
+              onClick={() => setForm({ ...form, favourites_send: value })}
+              className={cn(
+                'block w-full rounded-card border bg-surface p-4 transition-colors',
+                picked === value ? 'border-accent' : 'border-line hover:border-ink-faint',
+              )}
+            >
+              <span className="block text-sm font-medium text-ink">
+                {FAVOURITES_SEND[value].label}
+              </span>
+              <span className="mt-1 block text-xs text-ink-dim">
+                {FAVOURITES_SEND[value].detail}
+              </span>
+            </button>
+          </Rise>
+        ))}
+      </div>
+      <Rise i={3} className="">
+        <p className="text-xs text-ink-faint">
+          Removing a favourite from Robin will always ask you if you want to delete its items on
+          your integrations.
+        </p>
+      </Rise>
+    </div>
+  )
+}
+
 function GeneralTab(props: StoredProps) {
   const integrations = integrationsOf(null)
   return (
@@ -406,6 +505,9 @@ function GeneralTab(props: StoredProps) {
       </SettingsGroup>
       <SettingsGroup title="Notifications" icon={Bell}>
         <DestinationsPanel {...props} />
+      </SettingsGroup>
+      <SettingsGroup title="Behavior" icon={SlidersHorizontal}>
+        <BehaviorPanel {...props} />
       </SettingsGroup>
       <SettingsGroup title="Security" icon={ShieldCheck}>
         <AccountPanel />
@@ -2082,6 +2184,7 @@ function LanguageFilter({
  */
 function MakerFields({ category, mode }: { category: FavouriteCategory; mode: MakerMode }) {
   const queryClient = useQueryClient()
+  const favourites = useFavourites()
   const makers = (useMakerFilters().data ?? []).filter(
     (m) => m.category === category && m.mode === mode,
   )
@@ -2114,7 +2217,11 @@ function MakerFields({ category, mode }: { category: FavouriteCategory; mode: Ma
             category={category}
             kind={kind}
             picked={picked.map((m) => m.source_id)}
-            onPick={({ id }) => change.mutate({ kind, id })}
+            onPick={({ id }) =>
+              askBeforeHiding(favourites.data, { category, kind, id }, mode, () =>
+                change.mutate({ kind, id }),
+              )
+            }
           />
         </div>
       </Field>
@@ -2945,6 +3052,14 @@ const SETUP: Step[] = [
     Body: SpeciesPicker,
   },
   NOTIFICATIONS,
+  {
+    slug: 'favourites',
+    label: 'Favourites',
+    title: 'How do favourites work?',
+    icon: Star,
+    width: 'max-w-xl',
+    Body: FavouritesStep,
+  },
   ...(Object.keys(SOURCES) as Category[]).map((category) => {
     const { label, icon } = CATEGORY_TABS[category]
     const Body = (props: StoredProps) => <SourceStep category={category} {...props} />

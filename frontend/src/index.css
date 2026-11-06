@@ -332,31 +332,6 @@
       animation-duration: 1.6s;
     }
   }
-
-  /* An item new or changed since the page was reloaded from the outdated toast. */
-  .updated {
-    animation: updated 6s ease-out;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .updated {
-      animation-timing-function: steps(1, end);
-    }
-  }
-}
-
-/* Held, then faded. Kept in step with GLOW in lib/outdated.ts. */
-@keyframes updated {
-  0%,
-  65% {
-    box-shadow:
-      0 0 0 1px color-mix(in oklab, var(--color-accent) 45%, transparent),
-      0 0 18px 4px color-mix(in oklab, var(--color-accent) 40%, transparent);
-  }
-  100% {
-    box-shadow:
-      0 0 0 1px transparent,
-      0 0 18px 4px transparent;
-  }
 }
 
 @keyframes robin-flap {

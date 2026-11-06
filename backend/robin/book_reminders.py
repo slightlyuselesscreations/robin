@@ -55,6 +55,7 @@ async def _book(settings: db.Settings, row: dict[str, Any], window: notices.Wind
     async def tell(change: notices.Change) -> None:
         await _send(
             settings,
+            row,
             title=change.title,
             message=change.message,
             click=found["hardcover"],
@@ -74,6 +75,7 @@ async def _book(settings: db.Settings, row: dict[str, Any], window: notices.Wind
         return told
     await _send(
         settings,
+        row,
         title=f"{row['title']} is out {window.relative(date.fromisoformat(when))}",
         message=f"Releases {when}.",
         click=found["hardcover"],
@@ -84,11 +86,18 @@ async def _book(settings: db.Settings, row: dict[str, Any], window: notices.Wind
 
 
 async def _send(
-    settings: db.Settings, *, title: str, message: str, click: str, cover: str | None
+    settings: db.Settings,
+    row: dict[str, Any],
+    *,
+    title: str,
+    message: str,
+    click: str,
+    cover: str | None,
 ) -> None:
     await notify.send(
         settings,
         settings.channel("books"),
+        about=db.Notified(row["title"], f"book={row['book_id']}", cover),
         title=title,
         message=message,
         tags="books",

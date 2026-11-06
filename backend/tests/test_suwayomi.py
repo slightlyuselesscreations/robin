@@ -1,6 +1,7 @@
 """Monitored comic series: matching a #1 to a source series, adding it once readable, and
 following the library from then on."""
 
+import asyncio
 import json
 from typing import Any
 
@@ -270,7 +271,6 @@ async def test_latest_is_kept_and_answered_at_once_while_it_is_asked_again(
         },
     )
     first = await client.get("/api/comics/latest")
-    assert "x-robin-stale" not in first.headers
     await client.get("/api/comics/latest")
     assert suwayomi_stub["kinds"] == ["LATEST"], "kept, not asked again"
 
@@ -278,13 +278,13 @@ async def test_latest_is_kept_and_answered_at_once_while_it_is_asked_again(
         c.execute("UPDATE cache SET expires_at = '2000-01-01' WHERE key LIKE 'suwayomi:latest:%'")
     suwayomi_stub["listed"] = False
     stale = await client.get("/api/comics/latest")
-    assert stale.headers["x-robin-stale"] == "1"
     assert stale.json() == first.json()
 
-    fresh = await client.get("/api/comics/latest", headers={"X-Robin-Fresh": "1"})
-    assert "x-robin-stale" not in fresh.headers
+    while db._refreshing:
+        await asyncio.sleep(0)
+    fresh = await client.get("/api/comics/latest")
     assert fresh.json() == []
-    assert suwayomi_stub["kinds"] == ["LATEST", "LATEST"], "asked once for both"
+    assert suwayomi_stub["kinds"] == ["LATEST", "LATEST"], "asked once behind the page"
 
 
 def shelved(manga_id: int, title: str, issues: int, latest: str | None = None) -> dict[str, Any]:

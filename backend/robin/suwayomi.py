@@ -361,6 +361,7 @@ async def _sync_library() -> int:
                 await notify.send(
                     settings,
                     channel,
+                    about=db.Notified(row["series"], f"series={held['id']}", held["thumbnailUrl"]),
                     title=f"{row['series']} {latest}".strip()
                     if new == 1
                     else f"{new} new issues of {row['series']}",
@@ -487,6 +488,7 @@ async def add_if_found(
             await notify.send(
                 settings,
                 channel,
+                about=db.Notified(comic["series"], f"series={match['id']}", comic["cover"]),
                 title=f"{comic['series']} is in your library",
                 message=f"{count} issue{'' if count == 1 else 's'}" if count else "No issue yet",
                 tags="books",

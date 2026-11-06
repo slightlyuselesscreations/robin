@@ -145,6 +145,7 @@ async def test_a_notice_reaches_every_destination_at_the_categorys_place(
     await notify.send(
         settings,
         settings.channel("games"),
+        about=db.Notified("Hello", "game=1"),
         title="Hello",
         message="Body",
         click="https://igdb.test",
@@ -171,13 +172,25 @@ async def test_one_destination_failing_is_logged_and_the_rest_still_sent(
 
     monkeypatch.setattr(notify, "_deliver", deliver)
     settings = db.get_settings()
-    await notify.send(settings, settings.channel("games"), title="Hi", message="Body")
+    await notify.send(
+        settings,
+        settings.channel("games"),
+        about=db.Notified("Hi", "game=1"),
+        title="Hi",
+        message="Body",
+    )
     health = await notify_health(settings)
     assert health == "Gotify: refused"
 
     monkeypatch.setattr(notify, "_deliver", lambda url, **_: _answer("down"))
     with pytest.raises(notify.NotifyError):
-        await notify.send(settings, settings.channel("games"), title="Hi", message="Body")
+        await notify.send(
+            settings,
+            settings.channel("games"),
+            about=db.Notified("Hi", "game=1"),
+            title="Hi",
+            message="Body",
+        )
 
 
 async def _answer(value: str | None) -> str | None:
@@ -204,6 +217,7 @@ async def test_quiet_hours_keep_notices_and_send_one_digest_when_they_end(
         await notify.send(
             settings,
             settings.channel("games"),
+            about=db.Notified(f"Game {n}", "game=1"),
             title=f"Game {n} is out tomorrow",
             message=f"Releases 2026-09-1{n}.",
             click=f"https://igdb.test/{n}",
@@ -433,14 +447,34 @@ async def test_every_notice_sent_is_kept_newest_first(
     settings = db.get_settings()
     channel = settings.notices("games")
     assert channel is not None
-    await notify.send(settings, channel, title="Dreadmoor has a release date", message="Soon.")
-    db.hold_notice("games", "Kept back", "Later.", "zzz", "https://x.test", None)
+    await notify.send(
+        settings,
+        channel,
+        about=db.Notified("Dreadmoor", "game=1"),
+        title="Dreadmoor has a date",
+        message="Soon.",
+    )
+    await notify.send(
+        settings,
+        channel,
+        about=[db.Notified("One #1", "comic=1", tag="#1"), db.Notified("Two #1", "comic=2")],
+        title="2 new #1s",
+        message="Digest",
+    )
+    db.hold_notice(
+        "games", "Kept is out", "Later.", "zzz", None, None, [db.Notified("Kept", "game=2")]
+    )
     assert await notify.send_held() == 1
-
+    await notify.send(
+        settings, channel, about=db.Notified("Dreadmoor", "game=1"), title="Moved", message="Again."
+    )
     listed = (await client.get("/api/notices")).json()
-    assert [n["title"] for n in listed] == ["Kept back", "Dreadmoor has a release date"]
-    assert listed[0]["click"] == "https://x.test"
-
+    assert [n["name"] for n in listed] == ["Dreadmoor", "Kept", "Two #1", "One #1"]
+    assert listed[1]["target"] == "game=2"
+    assert listed[3]["tag"] == "#1"
+    assert not {"title", "message"} & set(listed[0])
     monkeypatch.setattr(db, "SENT_KEPT", 1)
-    await notify.send(settings, channel, title="Newest", message="Now.")
-    assert [n["title"] for n in db.sent_notices()] == ["Newest"]
+    await notify.send(
+        settings, channel, about=db.Notified("Newest", "game=1"), title="Newest", message="Now."
+    )
+    assert [n["name"] for n in db.sent_notices()] == ["Newest"]

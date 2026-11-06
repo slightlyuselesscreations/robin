@@ -28,13 +28,11 @@ async def settle() -> None:
 async def test_a_page_is_answered_with_the_old_value_at_once_and_it_is_fetched_again() -> None:
     db.cache_put("k", "old", -1)
     calls, fetch = counting(["new"])
-    mark = db.Stale()
-    token = db.STALE.set(mark)
+    token = db.STALE.set(db.Stale())
     try:
         assert await db.remember("k", 60, fetch) == "old"
     finally:
         db.STALE.reset(token)
-    assert mark.served
     await settle()
     assert calls == [1]
     assert db.cache_get("k") == "new"
@@ -46,16 +44,14 @@ async def test_outside_a_page_an_expired_value_waits_for_the_fetch() -> None:
     assert await db.remember("k", 60, fetch) == "new"
 
 
-async def test_a_page_asking_for_the_fresh_value_waits_for_it() -> None:
+async def test_a_fetch_a_page_waits_on_reads_fresh() -> None:
     db.cache_put("k", "old", -1)
     _, fetch = counting(["new"])
-    mark = db.Stale(wait=True)
-    token = db.STALE.set(mark)
+    token = db.STALE.set(db.Stale(wait=True))
     try:
         assert await db.remember("k", 60, fetch) == "new"
     finally:
         db.STALE.reset(token)
-    assert not mark.served
 
 
 async def test_requests_at_once_fetch_once() -> None:

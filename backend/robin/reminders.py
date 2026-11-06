@@ -153,6 +153,7 @@ async def _send(
     await notify.send(
         settings,
         settings.channel("screens"),
+        about=db.Notified(row["title"], f"title={row['kind']}-{row['tmdb_id']}", row["poster"]),
         title=title,
         message=message,
         tags=tags,

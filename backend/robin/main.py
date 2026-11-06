@@ -193,27 +193,21 @@ app = FastAPI(
 # The SPA bundle and the Discover payload are the only large responses. Starlette excludes
 # already compressed types, so the cached covers are passed through untouched.
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
 # A page asking for its data is answered at once with what was kept, however old, while its
 # source is asked again. The answer says so, and the page asks once more with FRESH_HEADER to
 # wait for the new one, which it offers to show when it differs.
-STALE_HEADER = "X-Robin-Stale"
-FRESH_HEADER = "x-robin-fresh"
-
-
 async def serve_stale(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
     if request.method != "GET" or not request.url.path.startswith("/api/"):
         return await call_next(request)
-    mark = db.Stale(wait=request.headers.get(FRESH_HEADER) == "1")
-    token = db.STALE.set(mark)
+    token = db.STALE.set(db.Stale())
     try:
-        response = await call_next(request)
+        return await call_next(request)
     finally:
         db.STALE.reset(token)
-    if mark.served:
-        response.headers[STALE_HEADER] = "1"
-    return response
 
 
 app.middleware("http")(serve_stale)

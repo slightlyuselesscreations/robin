@@ -4,7 +4,6 @@ import type { LucideIcon } from 'lucide-react'
 import {
   type BookReminder,
   type Library,
-  type Origin,
   COMIC_STATE,
   type Category as CategoryKey,
   GAME_STATE,
@@ -43,8 +42,6 @@ export type Tracked = {
   state: State | null
   /** The favourite it comes from, by name. Null where none is. */
   favourite: string | null
-  /** Why Robin monitors it. Null for your own Monitor, and for what nobody monitors. */
-  origin: Origin | null
   /** The Radarr or Sonarr library holding it. Null where none does. */
   library: Library | null
   title: string
@@ -103,7 +100,6 @@ function game(g: MonitoredGame): Watched {
     category: 'games',
     state,
     favourite: g.favourite,
-    origin: g.origin,
     library: null,
     title: g.game_name,
     image: posterUrl(g.cover_image_id),
@@ -130,7 +126,6 @@ function comic(c: MonitoredComic): Watched {
     category: 'comics',
     state,
     favourite: c.favourite,
-    origin: c.origin,
     library: null,
     title: c.series,
     image: comicCover(c.cover),
@@ -147,10 +142,7 @@ function comic(c: MonitoredComic): Watched {
 /** A notice set ahead of a date, dated by what it waits for. Screens and Books share it. */
 function notice(
   category: 'screens' | 'books',
-  r: Pick<
-    Reminder,
-    'id' | 'status' | 'title' | 'date' | 'sent_at' | 'created_at' | 'origin' | 'favourite'
-  >,
+  r: Pick<Reminder, 'id' | 'status' | 'title' | 'date' | 'sent_at' | 'created_at' | 'favourite'>,
   image: string | null,
   tag: string | null,
   to: string,
@@ -161,7 +153,6 @@ function notice(
     category,
     state,
     favourite: r.favourite,
-    origin: r.origin,
     library: null,
     title: r.title,
     image,
@@ -269,7 +260,7 @@ export function useUpcoming(): Tracked[] {
   const dated = (calendar.data ?? []).filter((r) => shown(r.category) && !listed.has(`?${r.to}`))
   const withState = (t: Tracked): Tracked => {
     const w = monitored.get(t.to)
-    return w ? { ...t, state: w.state, favourite: w.favourite ?? t.favourite, origin: w.origin } : t
+    return w ? { ...t, state: w.state, favourite: w.favourite ?? t.favourite } : t
   }
   const upcoming: Tracked[] = [
     ...watched.map((w) => ({ ...w, favourite: w.favourite ?? from.get(w.to) ?? null })),
@@ -280,7 +271,6 @@ export function useUpcoming(): Tracked[] {
         category: r.category,
         state: null,
         favourite: r.favourite,
-        origin: null,
         library: r.category === 'screens' ? libraryOf(inLibrary, r.to) : null,
         title: r.title,
         image: r.image,
@@ -299,7 +289,6 @@ export function useUpcoming(): Tracked[] {
         category: r.category,
         state: null,
         favourite: null,
-        origin: null,
         library: r.library,
         title: r.title,
         image: r.image,

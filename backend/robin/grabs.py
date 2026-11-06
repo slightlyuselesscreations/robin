@@ -133,6 +133,7 @@ async def _consider(releases: list[dict[str, Any]], request: dict[str, Any]) -> 
         log.info("grabs: holding %s for %s to be confirmed", unsure["title"], request["game_name"])
         await _tell(
             settings,
+            request,
             title=f"Confirm a release for {request['game_name']}",
             message=f"PreDB could not vouch for {unsure['title']}. Open the game in Robin to "
             "grab it or reject it.",
@@ -160,6 +161,7 @@ async def _grab(release: dict[str, Any], request: dict[str, Any]) -> int:
     client = "qBittorrent" if settings.qbittorrent_ready else "Prowlarr"
     await _tell(
         settings,
+        request,
         title=f"{request['game_name']} is downloading",
         message=f"Sent {release['title']} to {client}.",
         tags="inbox_tray",
@@ -237,6 +239,7 @@ async def track_downloads() -> int:
         if request is not None:
             await _tell(
                 settings,
+                request,
                 title=f"{request['game_name']} is downloaded",
                 message=str(request["matched_release"]),
                 tags="white_check_mark",
@@ -258,12 +261,21 @@ async def with_downloads(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{**r, "download": held.get(r["id"])} for r in rows]
 
 
-async def _tell(settings: db.Settings, *, title: str, message: str, tags: str) -> None:
+async def _tell(
+    settings: db.Settings, about: dict[str, Any], *, title: str, message: str, tags: str
+) -> None:
     """A notice on the games topic, while it is on. A failed one is logged, never retried."""
     channel = settings.notices("games")
     if channel is None:
         return
     try:
-        await notify.send(settings, channel, title=title, message=message, tags=tags)
+        await notify.send(
+            settings,
+            channel,
+            about=notify.game_item(about),
+            title=title,
+            message=message,
+            tags=tags,
+        )
     except notify.NotifyError as exc:
         log.warning("grabs: could not send %r: %s", title, exc)

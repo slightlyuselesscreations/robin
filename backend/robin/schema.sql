@@ -368,16 +368,19 @@ CREATE TABLE IF NOT EXISTS held_notices (
     tags       TEXT NOT NULL DEFAULT '',
     click      TEXT,
     attach     TEXT,
+    items_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL
 );
 
 -- Every notice that went out, newest kept up to `db.SENT_KEPT`, for Recently notified on Home.
-CREATE TABLE IF NOT EXISTS sent_notices (
+CREATE TABLE IF NOT EXISTS notified_items (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     category TEXT NOT NULL,
-    title    TEXT NOT NULL,
-    message  TEXT NOT NULL,
-    click    TEXT,
-    attach   TEXT,
+    name     TEXT NOT NULL,
+    -- The dialog parameter it opens by, as a countdown's target.
+    target   TEXT NOT NULL DEFAULT '',
+    art      TEXT,
+    tag      TEXT,
+    favourite TEXT,
     sent_at  TEXT NOT NULL
 );

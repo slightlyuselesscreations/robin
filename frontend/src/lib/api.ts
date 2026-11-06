@@ -69,14 +69,16 @@ export type Download = { state: string; progress: number; eta: number }
 export type Origin =
   { kind: 'favourite'; id: number | null; name: string | null } | { kind: Library | 'suwayomi' }
 
-/** A notice that went out, as Recently notified lists it. */
+/** An item a notification was about, as Recently notified lists it. */
 export type SentNotice = {
   id: number
   category: Category
-  title: string
-  message: string
-  click: string | null
-  attach: string | null
+  name: string
+  /** The dialog parameter it opens by. */
+  target: string
+  art: string | null
+  tag: string | null
+  favourite: string | null
   sent_at: string
 }
 
@@ -692,14 +694,6 @@ export const PAUSED = 'robin:paused'
 
 export type Paused = { source: string; until: string; message: string }
 
-/**
- * A page was answered with what Robin kept past its lifetime while its source is asked again.
- * The event's detail is a `Stale`, the answer it got.
- */
-export const STALE = 'robin:stale'
-
-export type Stale = { path: string; body: unknown }
-
 /** A moment later today as a clock time, any other day with its date. */
 export function clockTime(iso: string): string {
   const when = new Date(iso)
@@ -718,13 +712,12 @@ export function signedOut(client: QueryClient) {
   void client.invalidateQueries({ queryKey: ['me'] })
 }
 
-async function request<T>(path: string, init?: RequestInit, fresh = false): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(path, {
     ...init,
     // The backend refuses any write without X-Robin, which a cross site form cannot send.
     headers: {
       'X-Robin': '1',
-      ...(fresh ? { 'X-Robin-Fresh': '1' } : {}),
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
     },
   })
@@ -750,15 +743,8 @@ async function request<T>(path: string, init?: RequestInit, fresh = false): Prom
   }
   // A 204 carries nothing to parse. Callers that expect nothing ask for void.
   if (resp.status === 204) return undefined as T
-  const body: unknown = await resp.json()
-  if (resp.headers.get('X-Robin-Stale')) {
-    window.dispatchEvent(new CustomEvent<Stale>(STALE, { detail: { path, body } }))
-  }
-  return body as T
+  return (await resp.json()) as T
 }
-
-/** What `path` answers once its source has been asked again, waiting for it. */
-export const latest = (path: string) => request<unknown>(path, undefined, true)
 
 const post = <T = void>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) })

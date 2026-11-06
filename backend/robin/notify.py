@@ -14,6 +14,7 @@ deployment.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -326,10 +327,18 @@ def merged(sent: list[Destination], stored: list[Destination]) -> list[Destinati
 # ---------------------------------------------------------------- sending
 
 
+def game_item(row: dict[str, Any]) -> db.Notified:
+    """A monitored game as a notification about it records it."""
+    cover = (db.get_game(int(row["igdb_id"])) or {}).get("cover_image_id")
+    image = f"/img/cover_big/{cover}.jpg" if cover else None
+    return db.Notified(row["game_name"], f"game={row['igdb_id']}", image)
+
+
 async def send(
     settings: db.Settings,
     channel: db.Channel,
     *,
+    about: db.Notified | list[db.Notified],
     title: str,
     message: str,
     tags: str = "video_game",
@@ -337,11 +346,13 @@ async def send(
     attach: str | None = None,
 ) -> None:
     """Send one notice on a category's channel to every destination, or keep it while the
-    category's quiet hours last. Raises NotifyError when no destination took it."""
+    category's quiet hours last. `about` is the item it tells of, or each item of a digest.
+    Raises NotifyError when no destination took it."""
+    items = about if isinstance(about, list) else [about]
     if not settings.notify_destinations:
         raise NotifyError("No notification destination. Add one in Settings.")
     if held_until(channel.quiet, notices.local_now()) is not None:
-        db.hold_notice(channel.category, title, message, tags, click, attach)
+        db.hold_notice(channel.category, title, message, tags, click, attach, items)
         log.info("notify: %r kept until quiet hours end", title)
         return
     await deliver(
@@ -353,7 +364,7 @@ async def send(
         click=click,
         attach=attach,
     )
-    db.sent_notice(channel.category, title, message, click, attach)
+    db.sent_notice(channel.category, items)
 
 
 async def deliver(
@@ -471,7 +482,7 @@ async def send_held(now: datetime | None = None) -> int:
             log.warning("notify: %s kept notifications wait: %s", category, exc)
             continue
         for row in rows:
-            db.sent_notice(category, row["title"], row["message"], row["click"], row["attach"])
+            db.sent_notice(category, [db.Notified(*i) for i in json.loads(row["items_json"])])
         db.drop_held([int(r["id"]) for r in rows])
         sent += 1
     return sent
@@ -542,6 +553,7 @@ async def notify_upcoming_releases(now: datetime | None = None) -> int:
             await send(
                 settings,
                 channel,
+                about=game_item(row),
                 title=f"{row['game_name']} is out {window.relative(release)}",
                 message=f"Releases {release.isoformat()}.{_kind(row['release_status'])}",
                 click=f"https://www.igdb.com/games/{row['igdb_id']}",
@@ -603,11 +615,16 @@ async def notify_date_changes(now: datetime | None = None) -> int:
     for row in coming:
         game = fresh.get(int(row["igdb_id"]), row)
 
-        async def tell(change: notices.Change, game: dict[str, Any] = game) -> None:
+        async def tell(
+            change: notices.Change,
+            game: dict[str, Any] = game,
+            row: dict[str, Any] = row,
+        ) -> None:
             assert channel is not None
             await send(
                 settings,
                 channel,
+                about=game_item(row),
                 title=change.title,
                 message=f"{change.message}{_kind(game.get('release_status'))}",
                 tags="calendar",

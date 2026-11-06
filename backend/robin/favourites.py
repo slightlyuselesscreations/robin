@@ -157,8 +157,7 @@ def tag(category: Category, release: dict[str, Any]) -> str | None:
         parts = [PLATFORM_TAGS[f] for f in release.get("exclusive") or []]
         parts.append("EA" if release.get("release_status") == "Early Access" else None)
     elif category == "comics":
-        parts = ["#1" if release.get("number") == "1" else None]
-        parts.append((release.get("publisher") or "").split(" ")[0] or None)
+        return comics.tag(release)
     elif category == "screens":
         parts = ["Series" if release["kind"] == "tv" else release.get("release")]
     else:
@@ -311,6 +310,13 @@ async def notify_favourites(now: datetime | None = None) -> int:
                     await notify.send(
                         settings,
                         channel,
+                        about=db.Notified(
+                            release["title"],
+                            release["to"],
+                            release["image"],
+                            tag(category, raw),
+                            favourite["name"],
+                        ),
                         title=f"{release['title']} is out {window.relative(when)}",
                         message=f"From {favourite['name']}. Releases {when.isoformat()}.",
                         tags=TAGS[category],
@@ -369,7 +375,8 @@ async def monitor_favourites() -> int:
                 db.mark_favourite_monitored(category, key)
                 db.set_origin(category, key, why)
                 done.add(key)
-                told.append((_brief(category, release), favourite["name"]))
+                brief = {**_brief(category, release), "tag": tag(category, release)}
+                told.append((brief, favourite["name"]))
                 log.info("favourites: monitoring %s %s, from %s", category, key, favourite["name"])
                 added += 1
         await _tell_monitored(settings, category, told)
@@ -389,10 +396,15 @@ async def _tell_monitored(
     if channel is None or not told:
         return
     label = notify.LABELS[category]
-    # Each as title, message, where it opens and its art.
-    sends: list[tuple[str, str, str | None, str | None]] = (
+
+    def item(release: dict[str, Any], name: str) -> db.Notified:
+        return db.Notified(release["title"], release["to"], release["image"], release["tag"], name)
+
+    # Each as what it is about, title, message, where it opens and its art.
+    sends: list[tuple[db.Notified | list[db.Notified], str, str, str | None, str | None]] = (
         [
             (
+                item(release, name),
                 f"Now monitoring {release['title']} ({label})",
                 f"You favourited {name}.",
                 release["click"],
@@ -403,6 +415,7 @@ async def _tell_monitored(
         if len(told) <= TELL_APART
         else [
             (
+                [item(release, name) for release, name in told],
                 f"Now monitoring {len(told)} releases ({label})",
                 "\n".join(f"{release['title']}. You favourited {name}." for release, name in told),
                 None,
@@ -410,11 +423,12 @@ async def _tell_monitored(
             )
         ]
     )
-    for title, message, click, attach in sends:
+    for about, title, message, click, attach in sends:
         try:
             await notify.send(
                 settings,
                 channel,
+                about=about,
                 title=title,
                 message=message,
                 tags=TAGS[category],
@@ -508,10 +522,17 @@ async def notify_series(now: datetime | None = None) -> int:
             continue
         for issue in issues:
 
-            async def tell(change: notices.Change, issue: dict[str, Any] = issue) -> None:
+            async def tell(
+                change: notices.Change,
+                issue: dict[str, Any] = issue,
+                series: str = row["series"],
+            ) -> None:
                 await notify.send(
                     settings,
                     channel,
+                    about=db.Notified(
+                        series, f"comic={issue['id']}", issue["cover"], comics.tag(issue)
+                    ),
                     title=change.title,
                     message=change.message,
                     tags="calendar",
@@ -543,6 +564,9 @@ async def notify_series(now: datetime | None = None) -> int:
                 await notify.send(
                     settings,
                     channel,
+                    about=db.Notified(
+                        row["series"], f"comic={issue['id']}", issue["cover"], comics.tag(issue)
+                    ),
                     title=f"{issue['title']}{out}",
                     message=issue["publisher"] or row["series"],
                     tags="comic_book",

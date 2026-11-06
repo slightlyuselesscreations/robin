@@ -17,19 +17,9 @@ import { ScreenDialog } from '@/components/ScreenDialog'
 import { Toaster } from '@/components/ui/sonner'
 import { Spinner } from '@/components/ui/spinner'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import {
-  ApiError,
-  PAUSED,
-  type Paused,
-  STALE,
-  type ScreenKind,
-  type Stale,
-  api,
-  latest,
-} from '@/lib/api'
-import { CATEGORIES, useShown } from '@/lib/categories'
+import { ApiError, PAUSED, type Paused, type ScreenKind, api } from '@/lib/api'
+import { useShown } from '@/lib/categories'
 import { parseFavouriteParam } from '@/lib/favourites'
-import { markReload } from '@/lib/outdated'
 import { useDialogParam, useDialogTrail } from '@/lib/params'
 import { Books } from '@/pages/Books'
 import { Comics } from '@/pages/Comics'
@@ -104,66 +94,6 @@ function PauseAlerts() {
     window.addEventListener(PAUSED, onPaused)
     return () => window.removeEventListener(PAUSED, onPaused)
   }, [])
-  return null
-}
-
-const PAGES: Record<string, string> = {
-  ...Object.fromEntries(CATEGORIES.map((c) => [c.to, c.label])),
-  '/monitored': 'Monitored',
-  '/favourites': 'Favourites',
-  '/search': 'Search',
-  '/settings': 'Settings',
-}
-
-const pageName = (pathname: string) =>
-  pathname === '/'
-    ? 'Home'
-    : (Object.entries(PAGES).find(([to]) => pathname.startsWith(to))?.[1] ?? 'Page')
-
-const OUTDATED = 'outdated'
-
-/**
- * A page answered with what Robin kept past its lifetime asks once more for each answer,
- * waiting for its source. When that comes back different, one toast offers it, until the page
- * is left.
- */
-function StaleAlerts() {
-  const client = useQueryClient()
-  const { pathname } = useLocation()
-  useEffect(() => {
-    const asked = new Set<string>()
-    let left = false
-    const reload = () => {
-      markReload()
-      void client.invalidateQueries({
-        predicate: (query) => !['me', 'settings'].includes(String(query.queryKey[0])),
-      })
-    }
-    const onStale = (event: Event) => {
-      const { path, body } = (event as CustomEvent<Stale>).detail
-      if (asked.has(path)) return
-      asked.add(path)
-      latest(path)
-        .then((answer) => {
-          if (left || JSON.stringify(answer) === JSON.stringify(body)) return
-          toast(`${pageName(pathname)} data outdated`, {
-            id: OUTDATED,
-            description: 'Reload the page to see the latest changes',
-            duration: Infinity,
-            closeButton: true,
-            action: { label: 'Reload', onClick: reload },
-          })
-        })
-        // The page keeps what it has, and a paused source has its own toast.
-        .catch(() => undefined)
-    }
-    window.addEventListener(STALE, onStale)
-    return () => {
-      left = true
-      window.removeEventListener(STALE, onStale)
-      toast.dismiss(OUTDATED)
-    }
-  }, [client, pathname])
   return null
 }
 
@@ -294,7 +224,6 @@ export default function App() {
               <Dialogs />
               <MatchWatcher />
               <PauseAlerts />
-              <StaleAlerts />
               <ArrRemoveDialog />
               <FavouriteStopDialog />
             </SetupGate>

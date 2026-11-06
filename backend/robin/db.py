@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, fields
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, get_origin, get_type_hints
+from typing import Any, Literal, NamedTuple, get_origin, get_type_hints
 
 from robin import redact
 from robin.config import env
@@ -216,6 +216,12 @@ def _origins(c: sqlite3.Connection, schema: str) -> None:
     )
 
 
+def _sent_notices(c: sqlite3.Connection, schema: str) -> None:
+    """The log of notification text Recently notified read before `notified_items`. Only `:main`
+    builds had it, no tagged release, so this goes once those have started on it."""
+    c.execute("DROP TABLE IF EXISTS sent_notices")
+
+
 # One-time changes to what an older Robin stored, each with the day its release shipped. Every
 # start runs them all after the columns are added, and each does nothing once done.
 # `test_migrations` fails `MIGRATION_DAYS` after that day, and the owner decides whether it goes.
@@ -223,6 +229,7 @@ MIGRATIONS: tuple[tuple[str, Callable[[sqlite3.Connection, str], None]], ...] = 
     ("2026-10-27", _universes),
     ("2026-10-27", _suwayomi_added),
     ("2026-10-27", _origins),
+    ("2026-11-06", _sent_notices),
 )
 MIGRATION_DAYS = 90
 
@@ -826,12 +833,10 @@ def cache_lookup_many(keys: list[str]) -> dict[str, Any]:
 class Stale:
     """What one API request may be answered with. Set per request by `main.serve_stale`.
 
-    `wait` is a request asking for the fresh answer, `served` is set once any answer it got was
-    past its lifetime.
+    `wait` is a fetch a page waits on, which reads what it needs fresh.
     """
 
     wait: bool = False
-    served: bool = False
 
 
 STALE: contextvars.ContextVar[Stale | None] = contextvars.ContextVar("stale", default=None)
@@ -864,8 +869,7 @@ def _refresh(
         if not finished.cancelled() and (exc := finished.exception()) is not None:
             log.info("cache: refreshing %s failed: %s", key, exc)
 
-    # A context of its own, so what it reads is asked for fresh and is not marked on the request
-    # that started it.
+    # A context of its own, so what it reads is not answered as the request that started it.
     context = contextvars.Context()
     if waited:
         context.run(STALE.set, Stale(wait=True))
@@ -888,7 +892,6 @@ async def remember(key: str, ttl: Lifetime, fetch: Callable[[], Awaitable[Any]])
     mark = STALE.get()
     task = _refresh(key, ttl, fetch, mark is not None and (not found or mark.wait))
     if found and mark is not None and not mark.wait:
-        mark.served = True
         return value
     try:
         # Shielded, so a page closed while it waits does not cancel the fetch for the rest.
@@ -1695,26 +1698,36 @@ def delete_favourite(favourite_id: int) -> None:
 SENT_KEPT = 200
 
 
-def sent_notice(
-    category: Category, title: str, message: str, click: str | None, attach: str | None
-) -> None:
+class Notified(NamedTuple):
+    """An item a notification was about, as Recently notified lists it."""
+
+    name: str
+    target: str
+    art: str | None = None
+    tag: str | None = None
+    favourite: str | None = None
+
+
+def sent_notice(category: Category, items: list[Notified]) -> None:
     with conn() as c:
-        c.execute(
-            "INSERT INTO sent_notices (category, title, message, click, attach, sent_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (category, title, message, click, attach, now()),
+        c.executemany(
+            "INSERT INTO notified_items (category, name, target, art, tag, favourite, sent_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(category, *item, now()) for item in items],
         )
         c.execute(
-            "DELETE FROM sent_notices WHERE id NOT IN"
-            " (SELECT id FROM sent_notices ORDER BY id DESC LIMIT ?)",
+            "DELETE FROM notified_items WHERE id NOT IN"
+            " (SELECT id FROM notified_items ORDER BY id DESC LIMIT ?)",
             (SENT_KEPT,),
         )
 
 
 def sent_notices() -> list[dict[str, Any]]:
-    """Every notice kept, newest first."""
+    """Every item notified, once each by its latest notification, newest first."""
     with conn() as c:
-        found = c.execute("SELECT * FROM sent_notices ORDER BY id DESC").fetchall()
+        found = c.execute(
+            "SELECT *, MAX(id) FROM notified_items GROUP BY category, name ORDER BY id DESC"
+        ).fetchall()
     return [dict(row) for row in found]
 
 
@@ -1725,12 +1738,14 @@ def hold_notice(
     tags: str,
     click: str | None,
     attach: str | None,
+    items: list[Notified],
 ) -> None:
     with conn() as c:
         c.execute(
-            "INSERT INTO held_notices (category, title, message, tags, click, attach, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (category, title, message, tags, click, attach, now()),
+            "INSERT INTO held_notices"
+            " (category, title, message, tags, click, attach, items_json, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (category, title, message, tags, click, attach, json.dumps(items), now()),
         )
 
 

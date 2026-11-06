@@ -9,8 +9,6 @@ import { Calendar } from '@/components/ui/calendar'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import {
-  LIBRARY_NAME,
-  type Origin,
   type SentNotice,
   SERVICES,
   STATE_LABEL,
@@ -80,11 +78,7 @@ function Lead({
       <Artwork image={item.image} shape={item.shape} className="w-8 shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          {item.state ? (
-            <StateIcon state={item.state} />
-          ) : (
-            <span aria-hidden className="size-3.5 shrink-0" />
-          )}
+          {item.state ? <StateIcon state={item.state} /> : null}
           <TitleText library={item.library} className="text-sm font-medium text-ink">
             {item.title}
           </TitleText>
@@ -151,13 +145,6 @@ function PanelLoading() {
   )
 }
 
-/** Why something is monitored, as the Status panel counts it and an item's dialog names it. */
-function originGroup(origin: Origin | null): string {
-  if (origin === null) return 'from you'
-  if (origin.kind === 'favourite') return 'from favourites'
-  return `from ${origin.kind === 'suwayomi' ? 'Suwayomi' : LIBRARY_NAME[origin.kind]}`
-}
-
 /** One tile per category shown, counting what comes out this month and what is tracked now. */
 export function StatusPanel() {
   const now = new Date()
@@ -178,11 +165,6 @@ export function StatusPanel() {
       <PanelEmpty>Nothing is set up yet. Each category appears once its source is set.</PanelEmpty>
     )
   }
-  // Why each is monitored, shown once anything is there for more than one reason.
-  const counted = new Map<string, number>()
-  for (const i of items)
-    counted.set(originGroup(i.origin), (counted.get(originGroup(i.origin)) ?? 0) + 1)
-  const origins = [...counted].map(([label, n]) => ({ label, n }))
   const tiles = categories.map(({ key, to, icon, label }) => ({
     to,
     icon,
@@ -195,7 +177,7 @@ export function StatusPanel() {
       .filter((c) => c.n > 0 || c.state === 'waiting' || c.state === 'found'),
   }))
   return (
-    <PanelBody className="space-y-3">
+    <PanelBody>
       <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(16rem,1fr))]">
         {tiles.map(({ to, icon: Icon, title, counts }) => (
           <Link
@@ -219,11 +201,6 @@ export function StatusPanel() {
           </Link>
         ))}
       </div>
-      {origins.length > 1 ? (
-        <p className="text-xs text-ink-faint">
-          {origins.map((o) => `${o.n} ${o.label}`).join(' · ')}
-        </p>
-      ) : null}
     </PanelBody>
   )
 }
@@ -430,66 +407,45 @@ function Download({ torrent }: { torrent: Torrent }) {
 
 // ------------------------------------------------------------------ recently notified
 
-/** Every notice that went out, in every category shown, each opening where the notice did. */
-export function FoundPanel() {
-  const shown = useShown()
-  const sent = useQuery({ queryKey: ['notices'], queryFn: api.notices, refetchInterval: 60_000 })
-  const notices = (sent.data ?? []).filter((n) => shown(n.category)).slice(0, ROWS)
-
-  if (sent.isPending) return <PanelLoading />
-  if (!notices.length) return <PanelEmpty>Nothing notified yet.</PanelEmpty>
+/** An item notified as Home has it now, else as it was when notified. */
+function notifiedItem(notice: SentNotice, items: Tracked[]): Tracked {
   return (
-    <ul className="@container divide-y divide-line">
-      {notices.map((notice) => (
-        <NoticeRow key={notice.id} notice={notice} />
-      ))}
-    </ul>
+    items.find((i) => i.to === `?${notice.target}`) ??
+    items.find((i) => i.category === notice.category && i.title === notice.name) ?? {
+      key: `notified:${notice.id}`,
+      category: notice.category,
+      state: null,
+      favourite: notice.favourite,
+      library: null,
+      title: notice.name,
+      image: notice.art,
+      shape: notice.category === 'games' ? 'poster' : 'cover',
+      tag: notice.tag,
+      to: `?${notice.target}`,
+      release: null,
+      releaseText: null,
+      foundAt: null,
+      createdAt: null,
+    }
   )
 }
 
-function NoticeRow({ notice }: { notice: SentNotice }) {
-  const sentOn = new Date(notice.sent_at)
-  sentOn.setHours(0, 0, 0, 0)
-  const days = daysTo(sentOn)
-  const body = (
-    <>
-      <Lead
-        item={{
-          image: notice.attach,
-          shape: notice.category === 'games' ? 'poster' : 'cover',
-          state: null,
-          library: null,
-          title: notice.title,
-          favourite: null,
-          category: notice.category,
-          tag: null,
-        }}
-      />
-      <Clip className="hidden max-w-[40%] font-mono text-2xs text-ink-faint @md:block">
-        {notice.message}
-      </Clip>
-      <span className="shrink-0 text-xs font-medium text-ink-dim">{countdown(days)}</span>
-    </>
-  )
-  const row = 'flex items-center gap-3 px-4 py-2'
+/** Every item notified, in every category shown. */
+export function FoundPanel() {
+  const shown = useShown()
+  const items = useUpcoming()
+  const loading = useOverviewLoading(true)
+  const sent = useQuery({ queryKey: ['notices'], queryFn: api.notices, refetchInterval: 60_000 })
+  const notices = (sent.data ?? []).filter((n) => shown(n.category)).slice(0, ROWS)
+
+  if (sent.isPending || loading) return <PanelLoading />
+  if (!notices.length) return <PanelEmpty>Nothing notified yet.</PanelEmpty>
   return (
-    <li>
-      {notice.click ? (
-        <a
-          href={notice.click}
-          target="_blank"
-          rel="noreferrer"
-          className={cn(
-            row,
-            'group transition-colors hover:bg-raised/50 focus-visible:outline-accent',
-          )}
-        >
-          {body}
-        </a>
-      ) : (
-        <div className={row}>{body}</div>
-      )}
-    </li>
+    <ul className="divide-y divide-line">
+      {notices.map((notice) => (
+        <Row key={notice.id} item={notifiedItem(notice, items)} />
+      ))}
+    </ul>
   )
 }
 

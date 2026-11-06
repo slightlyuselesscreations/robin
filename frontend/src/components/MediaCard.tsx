@@ -1,6 +1,6 @@
 import { Hourglass, SquareArrowOutUpRight, Star } from 'lucide-react'
 import { useAddCountdown } from '@/lib/countdowns'
-import { type ReactElement, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { Clip, FlyingLogo, Robin, StatusGlyph, Tip } from '@/components/Page'
@@ -24,7 +24,6 @@ import { LIBRARY_CLASS } from '@/lib/arr'
 import { LIBRARY_NAME, type Library, type View, imageSrc } from '@/lib/api'
 import type { Item, PlatformTag, Shape } from '@/lib/items'
 import { riseAt } from '@/lib/motion'
-import { useUpdated } from '@/lib/outdated'
 import { ahead, cn } from '@/lib/utils'
 
 const ASPECT: Record<Shape, string> = { poster: 'aspect-[3/4]', cover: 'aspect-[2/3]' }
@@ -213,11 +212,6 @@ function FieldLines({ item }: { item: Item }) {
 const toneClass = (tone?: 'good' | 'bad') =>
   tone === 'good' ? 'text-good' : tone === 'bad' ? 'text-bad' : undefined
 
-/** Hands `children` the class that rings the item when Reload brought it in new or changed. */
-function Updated({ item, children }: { item: Item; children: (ring?: string) => ReactElement }) {
-  return children(useUpdated(item))
-}
-
 export function MediaCard({
   item,
   compact = false,
@@ -228,14 +222,9 @@ export function MediaCard({
   /** Its place in the wave its grid rises in as it is first drawn. */
   i?: number
 }) {
-  const ring = useUpdated(item)
   return (
     <ItemMenu item={item}>
-      <Link
-        to={item.to}
-        className={cn('group block rounded-card focus-visible:outline-accent', ring)}
-      >
-        {/* Apart from the link, whose own animation is the glow Reload rings it with. */}
+      <Link to={item.to} className="group block rounded-card focus-visible:outline-accent">
         <div className="rise" style={riseAt(i, 20)}>
           <Artwork image={item.image} shape={item.shape} settled={item.settled} />
           <div className="mt-2 space-y-0.5">
@@ -275,37 +264,33 @@ function CompactList({ items }: { items: Item[] }) {
   return (
     <ul className="divide-y divide-line">
       {items.map((item) => (
-        <Updated key={item.key} item={item}>
-          {(ring) => (
-            <li className={cn('flex items-center', ring)}>
-              <ItemMenu item={item}>
-                <Link
-                  to={item.to}
-                  className="group flex min-w-0 flex-1 items-center gap-3 px-4 py-2 transition-colors hover:bg-raised/50 focus-visible:outline-accent"
-                >
-                  <Artwork image={item.image} shape={item.shape} className="w-8 shrink-0" />
-                  <div className="flex min-w-0 flex-1 items-baseline gap-4">
-                    <div className="w-64 max-w-[40%] shrink-0">
-                      <Title item={item} className="text-sm" />
-                    </div>
-                    <Meta item={item} className="min-w-0 flex-1 font-mono" />
-                    {item.fields?.map((field) =>
-                      field.value ? (
-                        <span key={field.label} className="shrink-0 text-2xs text-ink-faint">
-                          {field.label}{' '}
-                          <span className={cn('text-ink-dim', toneClass(field.tone))}>
-                            {field.value}
-                          </span>
-                        </span>
-                      ) : null,
-                    )}
-                  </div>
-                </Link>
-              </ItemMenu>
-              {item.action ? <div className="shrink-0 pr-2">{item.action}</div> : null}
-            </li>
-          )}
-        </Updated>
+        <li key={item.key} className="flex items-center">
+          <ItemMenu item={item}>
+            <Link
+              to={item.to}
+              className="group flex min-w-0 flex-1 items-center gap-3 px-4 py-2 transition-colors hover:bg-raised/50 focus-visible:outline-accent"
+            >
+              <Artwork image={item.image} shape={item.shape} className="w-8 shrink-0" />
+              <div className="flex min-w-0 flex-1 items-baseline gap-4">
+                <div className="w-64 max-w-[40%] shrink-0">
+                  <Title item={item} className="text-sm" />
+                </div>
+                <Meta item={item} className="min-w-0 flex-1 font-mono" />
+                {item.fields?.map((field) =>
+                  field.value ? (
+                    <span key={field.label} className="shrink-0 text-2xs text-ink-faint">
+                      {field.label}{' '}
+                      <span className={cn('text-ink-dim', toneClass(field.tone))}>
+                        {field.value}
+                      </span>
+                    </span>
+                  ) : null,
+                )}
+              </div>
+            </Link>
+          </ItemMenu>
+          {item.action ? <div className="shrink-0 pr-2">{item.action}</div> : null}
+        </li>
       ))}
     </ul>
   )
@@ -315,54 +300,50 @@ function MediaList({ items }: { items: Item[] }) {
   return (
     <ul className="divide-y divide-line">
       {items.map((item) => (
-        <Updated key={item.key} item={item}>
-          {(ring) => (
-            <li className={ring}>
-              <ItemMenu item={item}>
-                <Link
-                  to={item.to}
-                  className="group flex gap-4 px-4 py-3 transition-colors hover:bg-raised/50 focus-visible:outline-accent"
-                >
-                  <Artwork
-                    image={item.image}
-                    shape={item.shape}
-                    settled={item.settled}
-                    className="w-16 shrink-0 self-start"
-                  />
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="space-y-0.5">
-                      <Title item={item} className="text-base" />
-                      <Meta item={item} className="text-xs" />
-                    </div>
-                    {item.fields?.some((f) => f.value) ? (
-                      <dl className="space-y-1">
-                        {item.fields.map((field) =>
-                          field.value ? (
-                            <div key={field.label} className="flex gap-3 text-xs">
-                              <dt className="w-20 shrink-0 text-ink-faint">{field.label}</dt>
-                              <dd className="min-w-0 flex-1">
-                                <Clip
-                                  className={cn(
-                                    'text-ink-dim',
-                                    field.mono && 'font-mono text-2xs leading-5',
-                                    field.tone === 'good' && 'text-good',
-                                    field.tone === 'bad' && 'text-bad',
-                                  )}
-                                >
-                                  {field.value}
-                                </Clip>
-                              </dd>
-                            </div>
-                          ) : null,
-                        )}
-                      </dl>
-                    ) : null}
-                  </div>
-                </Link>
-              </ItemMenu>
-            </li>
-          )}
-        </Updated>
+        <li key={item.key}>
+          <ItemMenu item={item}>
+            <Link
+              to={item.to}
+              className="group flex gap-4 px-4 py-3 transition-colors hover:bg-raised/50 focus-visible:outline-accent"
+            >
+              <Artwork
+                image={item.image}
+                shape={item.shape}
+                settled={item.settled}
+                className="w-16 shrink-0 self-start"
+              />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="space-y-0.5">
+                  <Title item={item} className="text-base" />
+                  <Meta item={item} className="text-xs" />
+                </div>
+                {item.fields?.some((f) => f.value) ? (
+                  <dl className="space-y-1">
+                    {item.fields.map((field) =>
+                      field.value ? (
+                        <div key={field.label} className="flex gap-3 text-xs">
+                          <dt className="w-20 shrink-0 text-ink-faint">{field.label}</dt>
+                          <dd className="min-w-0 flex-1">
+                            <Clip
+                              className={cn(
+                                'text-ink-dim',
+                                field.mono && 'font-mono text-2xs leading-5',
+                                field.tone === 'good' && 'text-good',
+                                field.tone === 'bad' && 'text-bad',
+                              )}
+                            >
+                              {field.value}
+                            </Clip>
+                          </dd>
+                        </div>
+                      ) : null,
+                    )}
+                  </dl>
+                ) : null}
+              </div>
+            </Link>
+          </ItemMenu>
+        </li>
       ))}
     </ul>
   )
@@ -385,49 +366,45 @@ function MediaTable({ items, metaLabel }: { items: Item[]; metaLabel?: string })
       </TableHeader>
       <TableBody>
         {items.map((item) => (
-          <Updated key={item.key} item={item}>
-            {(ring) => (
-              <ItemMenu item={item}>
-                <TableRow className={cn('border-line/60 hover:bg-raised/50', ring)}>
-                  <TableCell className="max-w-0 px-4">
-                    <div className="flex items-center gap-1.5">
-                      {item.status ? <StatusGlyph status={item.status} /> : null}
-                      <Link to={item.to} className="min-w-0 text-ink hover:text-accent">
-                        <TitleText library={item.library}>{item.title}</TitleText>
-                      </Link>
-                      {item.favourite ? <FavouriteStar name={item.favourite} /> : null}
-                    </div>
-                  </TableCell>
-                  {metaLabel ? (
-                    <TableCell className="max-w-64 px-3 text-ink-dim">
-                      <div className="flex items-baseline gap-3">
-                        <Clip>{item.meta}</Clip>
-                        <ReleaseTag
-                          tag={item.tag}
-                          tip={item.tagTip}
-                          platform={item.platform}
-                          className="ml-auto"
-                        />
-                      </div>
-                    </TableCell>
-                  ) : null}
-                  {item.fields?.map((field) => (
-                    <TableCell
-                      key={field.label}
-                      className={cn(
-                        'max-w-64 px-3 text-ink-dim last:pr-4',
-                        field.mono && 'font-mono text-2xs',
-                        field.tone === 'good' && 'text-good',
-                        field.tone === 'bad' && 'text-bad',
-                      )}
-                    >
-                      <Clip>{field.value ?? '-'}</Clip>
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </ItemMenu>
-            )}
-          </Updated>
+          <ItemMenu key={item.key} item={item}>
+            <TableRow className="border-line/60 hover:bg-raised/50">
+              <TableCell className="max-w-0 px-4">
+                <div className="flex items-center gap-1.5">
+                  {item.status ? <StatusGlyph status={item.status} /> : null}
+                  <Link to={item.to} className="min-w-0 text-ink hover:text-accent">
+                    <TitleText library={item.library}>{item.title}</TitleText>
+                  </Link>
+                  {item.favourite ? <FavouriteStar name={item.favourite} /> : null}
+                </div>
+              </TableCell>
+              {metaLabel ? (
+                <TableCell className="max-w-64 px-3 text-ink-dim">
+                  <div className="flex items-baseline gap-3">
+                    <Clip>{item.meta}</Clip>
+                    <ReleaseTag
+                      tag={item.tag}
+                      tip={item.tagTip}
+                      platform={item.platform}
+                      className="ml-auto"
+                    />
+                  </div>
+                </TableCell>
+              ) : null}
+              {item.fields?.map((field) => (
+                <TableCell
+                  key={field.label}
+                  className={cn(
+                    'max-w-64 px-3 text-ink-dim last:pr-4',
+                    field.mono && 'font-mono text-2xs',
+                    field.tone === 'good' && 'text-good',
+                    field.tone === 'bad' && 'text-bad',
+                  )}
+                >
+                  <Clip>{field.value ?? '-'}</Clip>
+                </TableCell>
+              ))}
+            </TableRow>
+          </ItemMenu>
         ))}
       </TableBody>
     </Table>

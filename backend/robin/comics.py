@@ -531,10 +531,11 @@ async def _announce_week(
 ) -> int:
     picked = {str(p["id"]) for p in settings.comics_digest_publishers}
     fresh: dict[str, list[dict[str, Any]]] = {}
+    stars = db.favourites("comics")
     for publisher_id, listed in (await week_listing(week)).items():
         if picked and publisher_id not in picked:
             continue
-        for comic in await credit(settings, listed):
+        for comic in star(await credit(settings, listed), stars):
             due = window.pending(ships(week), seen(comic), grace=4)
             if hidden.comic(settings, made(comic)) and due:
                 fresh.setdefault(comic["publisher"], []).append(comic)
@@ -548,6 +549,11 @@ async def _announce_week(
         await notify.send(
             settings,
             channel,
+            about=[
+                db.Notified(c["title"], f"comic={c['id']}", c["cover"], tag(c), c["favourite"])
+                for comics in fresh.values()
+                for c in comics
+            ],
             title=f"{firsts} {when}",
             message=digest(fresh),
             tags="comic_book",
@@ -709,6 +715,13 @@ def made(comic: dict[str, Any]) -> dict[str, list[int]]:
         "publisher": [comic["publisher_id"]] if comic.get("publisher_id") else [],
         **{kind: sorted({*comic.get(f"{kind}_ids", []), *opened[kind]}) for kind in CREDITED},
     }
+
+
+def tag(issue: dict[str, Any]) -> str | None:
+    """A #1 and its publisher, as a card tags an issue."""
+    parts = ["#1" if issue.get("number") == "1" else None]
+    parts.append((issue.get("publisher") or "").split(" ")[0] or None)
+    return " · ".join(p for p in parts if p) or None
 
 
 def star(comics: list[dict[str, Any]], favourites: list[dict[str, Any]]) -> list[dict[str, Any]]:

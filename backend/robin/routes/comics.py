@@ -141,6 +141,10 @@ def reported(settings: db.Settings, row: dict[str, Any]) -> dict[str, Any]:
     return {**row, "status": "tracking"} if db.comic_tracked(settings, row) else row
 
 
+# How long Monitored waits for a series Robin has no answer for yet. The read goes on behind it.
+NEXT_WAIT = 0.5
+
+
 async def _series_shown(settings: db.Settings, row: dict[str, Any]) -> bool:
     """Whether a monitored series stays on Monitored, by its series. Its next issue, `next`,
     is read beside it from what the series has coming, kept six hours, unless Suwayomi holds
@@ -155,8 +159,10 @@ async def _series_shown(settings: db.Settings, row: dict[str, Any]) -> bool:
     if not hidden.comic(settings, made):
         return False
     try:
-        coming = await favourites.coming(settings, "comics", "series", [series_id])
-    except upstream.UpstreamError:
+        coming = await asyncio.wait_for(
+            favourites.coming(settings, "comics", "series", [series_id]), NEXT_WAIT
+        )
+    except upstream.UpstreamError, TimeoutError:
         return True
     today = datetime.now(UTC).date().isoformat()
     row["next"] = next(

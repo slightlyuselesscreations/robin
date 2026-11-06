@@ -464,22 +464,14 @@ async def prefetch_weeks() -> int:
 
 
 async def week_listing(week: date) -> dict[str, list[dict[str, Any]]]:
-    """The week's new #1s by publisher id, those in `PUBLISHERS` first, empty when Metron
-    failed to answer and nothing was kept. Each series' publisher is read when it is not kept,
-    so this waits on Metron, as the hourly loop can.
+    """The week's new #1s by publisher id, those in `PUBLISHERS` first, read from what the week
+    lists, empty when Metron failed to answer and nothing was kept. Each series' publisher is
+    read when it is not kept, so this waits on Metron, as the hourly loop can.
 
     A failure is not kept, so the next pass asks again.
     """
-
-    async def read() -> list[dict[str, Any]]:
-        # Its own client, since a refresh outlives the request that started it.
-        async with client() as http:
-            return await _issues(http, number="1", **_days(week))
-
     try:
-        listed: list[dict[str, Any]] = await db.remember(
-            f"comics:firsts:v4:{week.isoformat()}", lambda found: listing_ttl(week, found), read
-        )
+        listed = [c for c in await week_issues(week) if c["number"] == "1"]
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         log.warning("comics: listing %s failed: %s", week, exc)
         return {}
@@ -650,6 +642,22 @@ async def favourite(kind: str, source_id: int) -> dict[str, Any] | None:
     return found
 
 
+async def _credited(kind: str, source_id: int) -> list[dict[str, Any]]:
+    """The issues crediting a creator, character or universe from the first of the month, one
+    call kept a day, for what it has coming and the star of every list alike."""
+
+    async def read() -> list[dict[str, Any]]:
+        after = db.month_start().isoformat()
+        filtered: dict[str, str | int] = {CREDITED[kind]: source_id}
+        async with client() as http:
+            return await _issues(http, store_date_range_after=after, **filtered)
+
+    found: list[dict[str, Any]] = await db.remember(
+        f"comics:credited:v3:{kind}:{source_id}", AHEAD_TTL, read
+    )
+    return found
+
+
 async def favourite_releases(kind: str, ids: list[int]) -> list[dict[str, Any]]:
     """What a favourite has coming from the first of the month on, one call each: the issues of
     a series and those crediting a creator, character or universe, a publisher's up to
@@ -662,7 +670,7 @@ async def favourite_releases(kind: str, ids: list[int]) -> list[dict[str, Any]]:
             if kind == "series":
                 found += await _issues(http, series_id=source_id, **after)
             elif kind in CREDITED:
-                found += await _issues(http, **{CREDITED[kind]: source_id}, **after)
+                found += [dict(c) for c in await _credited(kind, source_id)]
             else:
                 before = (start + PUBLISHER_REACH).isoformat()
                 listed = await _issues(
@@ -690,16 +698,8 @@ async def credit(settings: db.Settings, found: list[dict[str, Any]]) -> list[dic
         for kind in CREDITED:
             wanted |= {(kind, i) for i in makers.get("comics", {}).get(kind, frozenset())}
     for kind, source_id in sorted(wanted):
-
-        async def read(kind: str = kind, source_id: int = source_id) -> list[str]:
-            after = db.month_start().isoformat()
-            filtered: dict[str, str | int] = {CREDITED[kind]: source_id}
-            async with client() as http:
-                listed = await _paged(http, "/issue/", store_date_range_after=after, **filtered)
-            return [str(i["id"]) for i in listed]
-
         try:
-            ids = set(await db.remember(f"comics:credited:v2:{kind}:{source_id}", AHEAD_TTL, read))
+            ids = {c["id"] for c in await _credited(kind, source_id)}
         except (httpx.HTTPError, ValueError, upstream.UpstreamError) as exc:
             log.warning("comics: %s %s failed: %s", kind, source_id, exc)
             continue

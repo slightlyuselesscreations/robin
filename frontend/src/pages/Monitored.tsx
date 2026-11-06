@@ -180,7 +180,9 @@ export function Monitored() {
 
   // Every category when unfiltered, but only those with something in them.
   const shown = categories.filter((c) => (only ? c.key === only : counts[c.key] > 0))
-  const loading = lists.some((q) => q.isLoading)
+  // Each category draws as its list arrives, the spinner only while nothing is there to draw.
+  const pending = categories.some((c, i) => (!only || c.key === only) && lists[i]?.isLoading)
+  const loading = pending && (only ? counts[only] === 0 : shown.length === 0)
 
   return (
     <Page>

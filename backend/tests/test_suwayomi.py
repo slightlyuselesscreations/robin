@@ -493,6 +493,8 @@ async def test_a_page_reads_the_library_again_at_most_once_a_minute(
     await suwayomi_on(client)
     monkeypatch.setattr(suwayomi, "_page_synced", 0.0)
     suwayomi_stub["library"] = [shelved(209, "Corpse Knight (2026-)", 6)]
+    assert (await client.get("/api/comics/monitored")).json() == [], "the page does not wait"
+    await asyncio.gather(*suwayomi._behind)
     [row] = (await client.get("/api/comics/monitored")).json()
     assert (row["series"], row["status"]) == ("Corpse Knight", "tracking")
 

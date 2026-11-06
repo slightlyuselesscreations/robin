@@ -307,17 +307,15 @@ def link(comics: list[dict[str, Any]]) -> None:
 
 # One library pass at a time, so a page and the sync loop never announce an issue twice.
 _syncing = asyncio.Lock()
-# When a page last had the library read, how often it may, and how long it waits for it.
+# When a page last had the library read, and how often it may.
 _page_synced = 0.0
 PAGE_SYNC = 60.0
-PAGE_WAIT = 2.0
 _behind: set[asyncio.Task[int]] = set()
 
 
 async def sync_for_page(settings: db.Settings) -> None:
-    """Read the library again before a page answers, at most once every `PAGE_SYNC` seconds and
-    waiting `PAGE_WAIT` at most, so what changed in Suwayomi shows at once. A pass that takes
-    longer goes on behind the answer."""
+    """Read the library again behind a page's answer, at most once every `PAGE_SYNC` seconds, so
+    what changed in Suwayomi shows on its next read. The page never waits for it."""
     global _page_synced
     if not settings.suwayomi_ready or time.monotonic() - _page_synced < PAGE_SYNC:
         return
@@ -325,7 +323,6 @@ async def sync_for_page(settings: db.Settings) -> None:
     task = asyncio.create_task(_quiet_sync())
     _behind.add(task)
     task.add_done_callback(_behind.discard)
-    await asyncio.wait({task}, timeout=PAGE_WAIT)
 
 
 async def _quiet_sync() -> int:

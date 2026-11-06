@@ -366,7 +366,7 @@ class Health(BaseModel):
 
 HEALTH_CACHE_KEY = "health:v13"
 # Home reads it on every visit. A minute keeps it current without asking five servers each time.
-HEALTH_TTL = 60
+HEALTH_TTL = 15 * 60
 
 
 def _missing(own: dict[str, object], needs: dict[str, bool] | None = None) -> str:
@@ -399,7 +399,7 @@ async def _check(
 
 @router.get("/health")
 async def health(refresh: bool = False) -> Health:
-    """Every upstream, asked directly. `refresh` skips the one minute cache."""
+    """Every upstream, asked directly. `refresh` skips what is kept."""
     if refresh:
         report = await _probe()
         db.cache_put(HEALTH_CACHE_KEY, report, HEALTH_TTL)

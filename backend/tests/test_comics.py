@@ -101,6 +101,25 @@ def test_a_long_digest_is_cut_short() -> None:
     assert body.endswith("more")
 
 
+async def test_a_weeks_firsts_ask_nothing_of_a_week_already_listed(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = metron.stub(monkeypatch, FRIDAY_WEEK)
+    await comics.week_issues(FRIDAY_WEEK)
+    await comics.week_listing(FRIDAY_WEEK)
+    assert [r.url.path for r in fake.asked].count("/api/issue/") == 1
+
+
+async def test_a_favourites_star_and_releases_share_one_call(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = metron.stub(monkeypatch, FRIDAY_WEEK)
+    monkeypatch.setattr(db, "favourites", lambda _: [{"kind": "person", "ids": [7]}])
+    await comics.favourite_releases("person", [7])
+    await comics.credit(db.get_settings(), [])
+    assert [r.url.path for r in fake.asked].count("/api/issue/") == 1
+
+
 async def test_a_weeks_firsts_are_grouped_by_publisher_the_main_first(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -113,7 +132,7 @@ async def test_a_weeks_firsts_are_grouped_by_publisher_the_main_first(
 
     listing = fake.asked[0]
     assert listing.url.path == "/api/issue/"
-    assert listing.url.params["number"] == "1"
+    assert "number" not in listing.url.params, "a week's #1s are read from all it lists"
     assert listing.url.params["store_date_range_after"] == "2026-10-05"
     assert listing.url.params["store_date_range_before"] == "2026-10-11"
     assert {r.url.path for r in fake.asked[1:]} == {f"/api/series/{s}/" for s in (100, 200, 300)}

@@ -131,6 +131,13 @@ async def warm_pages() -> int:
         pages.append(arr.calendar(settings))
     if db.favourites():
         pages.append(favourites.dated(settings))
+    if settings.comics_ready:
+        # What Monitored reads beside each series Suwayomi does not hold.
+        pages += [
+            favourites.coming(settings, "comics", "series", [int(row["series_id"])])
+            for row in db.rows("comics")
+            if row["series_id"] and not db.comic_tracked(settings, row)
+        ]
     for failed in await asyncio.gather(*pages, return_exceptions=True):
         if isinstance(failed, BaseException):
             logging.getLogger(__name__).info("warm: %s", failed)

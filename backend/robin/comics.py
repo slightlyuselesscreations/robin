@@ -307,6 +307,12 @@ def with_publishers(comics: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return comics
 
 
+def _began(series: dict[str, Any], shipped: str | None) -> int | None:
+    """The year a run began. Metron can date one by its cover, the year after its #1 ships."""
+    years = [series.get("year_began"), int(shipped[:4]) if shipped else None]
+    return min((y for y in years if y), default=None)
+
+
 def _comic(issue: dict[str, Any]) -> dict[str, Any]:
     """An issue as every list carries it, with the series and publisher ids it is made by. A
     list names no publisher, which `with_publishers` adds."""
@@ -321,7 +327,7 @@ def _comic(issue: dict[str, Any]) -> dict[str, Any]:
         "series_id": series.get("id"),
         # Its series' name and the year it began, which a Suwayomi run is matched by.
         "series": series.get("name"),
-        "year": series.get("year_began"),
+        "year": _began(series, issue.get("store_date")),
         "date": issue.get("store_date"),
         "cover": issue.get("image"),
         "series_url": f"{SITE}/series/{series['id']}/" if series.get("id") else None,
@@ -373,7 +379,7 @@ def parse_detail(issue: dict[str, Any] | None) -> dict[str, Any] | None:
         "person_ids": sorted({c["id"] for c in issue.get("credits") or []}),
         "series_id": series.get("id"),
         "series": series.get("name"),
-        "year": series.get("year_began"),
+        "year": _began(series, issue.get("store_date")),
         "publisher": issue.get("publisher"),
         "imprint": (issue.get("imprint") or {}).get("name"),
         "number": issue.get("number"),
@@ -397,7 +403,7 @@ def parse_detail(issue: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def _detail_key(comic_id: str, modified: str | None) -> str:
-    return f"comics:detail:v8:{comic_id}:{modified or ''}"
+    return f"comics:detail:v9:{comic_id}:{modified or ''}"
 
 
 def details(comics: list[dict[str, Any]]) -> dict[str, dict[str, Any] | None]:
@@ -470,7 +476,7 @@ async def week_listing(week: date) -> dict[str, list[dict[str, Any]]]:
 
     try:
         listed: list[dict[str, Any]] = await db.remember(
-            f"comics:firsts:v3:{week.isoformat()}", lambda found: listing_ttl(week, found), read
+            f"comics:firsts:v4:{week.isoformat()}", lambda found: listing_ttl(week, found), read
         )
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         log.warning("comics: listing %s failed: %s", week, exc)
@@ -491,7 +497,7 @@ async def week_issues(week: date) -> list[dict[str, Any]]:
             return await _issues(http, **_days(week))
 
     found: list[dict[str, Any]] = await db.remember(
-        f"comics:issues:v5:{week.isoformat()}", lambda listed: listing_ttl(week, listed), read
+        f"comics:issues:v6:{week.isoformat()}", lambda listed: listing_ttl(week, listed), read
     )
     return with_publishers([dict(c) for c in found])
 

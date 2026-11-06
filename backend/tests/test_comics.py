@@ -332,3 +332,9 @@ async def test_a_fetch_a_page_waits_on_keeps_its_turn_ahead_of_the_loop() -> Non
     await db.remember("test:loop", 60, fetch)
     assert marks[0] is not None, "a page waiting on it goes ahead"
     assert marks[1] is None, "the loop's own fetch stays behind"
+
+
+def test_a_run_began_no_later_than_its_first_issue_ships() -> None:
+    assert comics._began({"year_began": 2027}, "2026-11-04") == 2026
+    assert comics._began({"year_began": 2020}, "2026-11-04") == 2020
+    assert comics._began({}, None) is None

@@ -119,19 +119,28 @@ def run_of(title: str) -> tuple[str, int]:
     return (title[: dated.start()].strip(), int(dated.group(1))) if dated else (title.strip(), 0)
 
 
+def _bare(title: str) -> str:
+    """A title without its leading The, which Metron and a source name a run with or without."""
+    return re.sub(r"^\s*the\s+", "", title, flags=re.IGNORECASE)
+
+
 def queries(series: str) -> list[str]:
-    """The title, then its longest stretch free of punctuation.
+    """The title, without its leading The, then its longest stretch free of punctuation.
 
     The source matches the query literally, so "DC's Quoth the Raven... Whatever" finds nothing
     while "Quoth the Raven" finds it.
     """
     stretches = [" ".join(w for w in part.split() if len(w) > 1) for part in _WORDS.split(series)]
     longest = max(stretches, key=len, default="")
-    return [series] + ([longest] if longest and longest != series else [])
+    return list(dict.fromkeys(q for q in (series, _bare(series), longest) if q))
+
+
+def _key(title: str) -> str:
+    return filters.comparable(_bare(title))
 
 
 def pick(results: list[dict[str, Any]], series: str, year: int) -> dict[str, Any] | None:
-    """The result named exactly as the series, started the year of its #1 or later.
+    """The result named as the series, a leading The aside, started the year of its #1 or later.
 
     The year keeps an older run of the same name from being taken for the new one. The
     earliest qualifying year wins, since a later one is a relaunch after this.
@@ -141,7 +150,7 @@ def pick(results: list[dict[str, Any]], series: str, year: int) -> dict[str, Any
         dated = _YEAR.search(result["title"])
         if not dated or int(dated.group(1)) < year:
             continue
-        if filters.comparable(result["title"][: dated.start()]) == filters.comparable(series):
+        if _key(result["title"][: dated.start()]) == _key(series):
             found.append((int(dated.group(1)), result))
     return min(found, key=lambda pair: pair[0])[1] if found else None
 
@@ -287,9 +296,9 @@ def link(comics: list[dict[str, Any]]) -> None:
     unlinked = [r for r in db.rows("comics") if r["suwayomi_id"] and not r["series_id"]]
     if not unlinked:
         return
-    runs = {(filters.comparable(r["series"]), int(r["year"])): r for r in unlinked}
+    runs = {(_key(r["series"]), int(r["year"])): r for r in unlinked}
     for comic in comics:
-        row = runs.get((filters.comparable(comic.get("series") or ""), comic.get("year") or 0))
+        row = runs.get((_key(comic.get("series") or ""), comic.get("year") or 0))
         if row and comic.get("series_id"):
             db.link_comic_series(int(row["id"]), int(comic["series_id"]), comic["publisher"])
 

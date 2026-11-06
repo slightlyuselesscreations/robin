@@ -298,7 +298,7 @@ export function foundComicItem(entry: MonitoredComic, to: string): Item {
 }
 
 /** A series as the Suwayomi source lists it. */
-export function seriesItem(series: Series, to: string): Item {
+export function seriesItem(series: Series, to: string, monitor?: MonitoredComic | null): Item {
   return {
     key: `series:${series.id}`,
     to,
@@ -308,8 +308,12 @@ export function seriesItem(series: Series, to: string): Item {
     title: series.title,
     // A series whose source has its first issue alone, as a Metron #1 is tagged.
     tag: series.issues === 1 ? '#1' : null,
-    status: series.inLibrary ? { state: 'found', detail: ['In the Suwayomi library'] } : null,
-    settled: series.inLibrary,
+    status: monitor
+      ? comicStatus(monitor)
+      : series.inLibrary
+        ? { state: 'found', detail: ['In the Suwayomi library'] }
+        : null,
+    settled: series.inLibrary || Boolean(monitor),
     countdown: null,
     fields: [],
   }

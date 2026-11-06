@@ -46,6 +46,13 @@ def test_the_match_is_the_same_name_from_the_year_of_its_first_issue() -> None:
     assert suwayomi.pick(results[:2], "The Demon", 2026) is None
 
 
+def test_a_leading_the_does_not_stop_a_match() -> None:
+    results = [manga(1, "The Avengers (2018-)"), manga(2, "The Avengers (2026-)")]
+    assert suwayomi.pick(results, "Avengers", 2026) == results[1]
+    assert suwayomi.pick([manga(3, "Avengers (2026-)")], "The Avengers", 2026) is not None
+    assert "Avengers" in suwayomi.queries("The Avengers")
+
+
 def test_punctuation_does_not_stop_a_match() -> None:
     results = [manga(9, "DC's Quoth the Raven… Whatever (2026-)")]
     assert suwayomi.pick(results, "DC's Quoth the Raven... Whatever", 2026) == results[0]

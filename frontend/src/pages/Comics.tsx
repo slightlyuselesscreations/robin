@@ -318,7 +318,11 @@ export function Comics() {
                 <Items
                   view={view}
                   items={series.map((s) => ({
-                    ...seriesItem(s, withParam(params, 'series', s.id)),
+                    ...seriesItem(
+                      s,
+                      withParam(params, 'series', s.id),
+                      monitored.data?.find((row) => row.suwayomi_id === s.id),
+                    ),
                     menu: <SeriesMenu series={s} />,
                   }))}
                 />

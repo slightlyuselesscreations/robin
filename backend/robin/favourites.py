@@ -305,6 +305,8 @@ async def notify_favourites(now: datetime | None = None) -> int:
                 when = release["date"]
                 if _monitor_key(category, raw) in monitored or when is None:
                     continue
+                if not new_series(category, favourite["kind"], raw):
+                    continue
                 due = window.pending(when, noticed.get(release["key"]))
                 if due is None:
                     continue
@@ -339,12 +341,10 @@ async def notify_favourites(now: datetime | None = None) -> int:
 # ---------------------------------------------------------------- monitoring
 
 
-async def pass_over(settings: db.Settings, category: Category, kind: str, ids: list[int]) -> None:
-    """Under `future`, keep what a new favourite already has coming from being monitored. A read
-    that fails leaves it all to be monitored, as a new release would be."""
-    if settings.favourites_scope == "future":
-        for release in await coming(settings, category, kind, ids):
-            db.mark_favourite_monitored(category, _monitor_key(category, release))
+def new_series(category: Category, kind: str, release: dict[str, Any]) -> bool:
+    """Whether a release is news of a favourite. A comic favourite but a series takes a new
+    series, its #1, as a studio takes a new show, never the next issue of a run."""
+    return category != "comics" or kind == "series" or release["number"] == "1"
 
 
 async def monitor_favourites() -> int:
@@ -374,6 +374,8 @@ async def monitor_favourites() -> int:
                     db.set_origin(category, key, why)
                     unnamed.discard(key)
                 if not monitor or key in done:
+                    continue
+                if not new_series(category, favourite["kind"], release):
                     continue
                 try:
                     made = await _monitor(settings, category, release)

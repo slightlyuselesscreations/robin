@@ -66,10 +66,8 @@ async def add(body: NewFavourite) -> dict[str, Any]:
         body.category, body.kind, found["id"], found["name"], found["image"], found["ids"]
     )
     # Fetched now, so Home has its releases at once.
-    settings = db.get_settings()
     with contextlib.suppress(upstream.UpstreamError):
-        await favourites.coming(settings, body.category, body.kind, made["ids"])
-        await favourites.pass_over(settings, body.category, body.kind, made["ids"])
+        await favourites.coming(db.get_settings(), body.category, body.kind, made["ids"])
     await notify_now(favourites.monitor_favourites, f"adding {made['name']}")
     return made
 

@@ -84,7 +84,6 @@ import {
   type FavouriteKind,
   type MakerMode,
   GAME_PLATFORMS,
-  type FavouritesScope,
   type Health,
   LIBRARY_NAME,
   type Library as Arr,
@@ -398,35 +397,6 @@ function SecretField({
 }
 
 /** Only what every category shares: the theme, the account, and where notifications go. */
-const FAVOURITES_SCOPES: Record<FavouritesScope, string> = {
-  future: 'Automatically monitor future releases',
-  all: 'Automatically monitor all releases',
-}
-
-function BehaviorPanel({ form, setForm }: TabProps) {
-  return (
-    <Panel title="Favourites" icon={Star}>
-      <Field label="Adding a favourite">
-        <Select
-          value={form.favourites_scope ?? 'all'}
-          onValueChange={(next) => setForm({ ...form, favourites_scope: next as FavouritesScope })}
-        >
-          <SelectTrigger className="w-full border-line bg-base">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(FAVOURITES_SCOPES).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-    </Panel>
-  )
-}
-
 function GeneralTab(props: StoredProps) {
   const integrations = integrationsOf(null)
   return (
@@ -436,9 +406,6 @@ function GeneralTab(props: StoredProps) {
       </SettingsGroup>
       <SettingsGroup title="Notifications" icon={Bell}>
         <DestinationsPanel {...props} />
-      </SettingsGroup>
-      <SettingsGroup title="Behavior" icon={SlidersHorizontal}>
-        <BehaviorPanel {...props} />
       </SettingsGroup>
       <SettingsGroup title="Security" icon={ShieldCheck}>
         <AccountPanel />

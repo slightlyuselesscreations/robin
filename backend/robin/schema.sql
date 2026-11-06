@@ -84,9 +84,6 @@ CREATE TABLE IF NOT EXISTS settings (
     suwayomi_url             TEXT NOT NULL DEFAULT '',
     suwayomi_source_id       TEXT NOT NULL DEFAULT '',
     suwayomi_add             INTEGER NOT NULL DEFAULT 0,
-    -- What Automatically monitor takes of a new favourite: `all` it has coming, or only `future`
-    -- releases, those it gains after it was added.
-    favourites_scope         TEXT NOT NULL DEFAULT 'all',
     qbittorrent_url          TEXT NOT NULL DEFAULT '',
     qbittorrent_api_key      TEXT NOT NULL DEFAULT '',
     qbittorrent_category     TEXT NOT NULL DEFAULT 'games',

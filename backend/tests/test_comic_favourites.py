@@ -221,3 +221,12 @@ async def test_a_search_of_one_kind_is_one_call(client: AsyncClient, fake: metro
     found = (await client.get("/api/favourites/search", params=params)).json()
     assert [(e["kind"], e["id"]) for e in found] == [("person", 41)]
     assert [r.url.path for r in fake.asked] == ["/api/creator/"]
+
+
+def test_only_a_series_favourite_takes_more_than_a_new_series() -> None:
+    first, later = {"number": "1"}, {"number": "38"}
+    for kind in ("publisher", "person", "character", "universe"):
+        assert favourites.new_series("comics", kind, first)
+        assert not favourites.new_series("comics", kind, later)
+    assert favourites.new_series("comics", "series", later)
+    assert favourites.new_series("screens", "studio", {})

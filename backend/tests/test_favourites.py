@@ -99,22 +99,6 @@ async def test_a_show_waits_for_the_hour(
     assert db.favourite_noticed("screens") == {"tv-5": "2026-10-08|2026-10-07T18"}
 
 
-async def test_future_releases_leave_what_a_new_favourite_already_has(
-    notified: list[dict[str, Any]], coming: dict[str, Any]
-) -> None:
-    configure(books_favourites_monitor=True, favourites_scope="future")
-    favourite = db.add_favourite("books", "author", 7, "Some Writer", None)
-    coming["books"] = [book(1, "2026-10-08")]
-    settings = db.get_settings()
-    await favourites.pass_over(settings, "books", "author", favourite["ids"])
-    assert await favourites.monitor_favourites() == 0
-
-    db.cache_drop(favourites.COMING_PREFIX)
-    coming["books"] = [book(1, "2026-10-08"), book(2, "2026-12-01")]
-    assert await favourites.monitor_favourites() == 1
-    assert {r["hardcover_id"] for r in db.rows("book_reminders")} == {2}
-
-
 async def test_a_release_can_be_monitored_instead(
     notified: list[dict[str, Any]], coming: dict[str, Any]
 ) -> None:

@@ -127,7 +127,6 @@ export type Theme =
   | 'black'
 /** Dark, light, or whichever the system is set to. */
 export type Scheme = 'dark' | 'light' | 'system'
-export type FavouritesScope = 'future' | 'all'
 
 export type Settings = {
   twitch_client_id: string
@@ -149,7 +148,6 @@ export type Settings = {
   suwayomi_url: string
   suwayomi_source_id: string
   suwayomi_add: boolean
-  favourites_scope: FavouritesScope
   /** Where matched games download. The username is empty when qBittorrent needs no sign in. */
   qbittorrent_url: string
   has_qbittorrent_api_key: boolean

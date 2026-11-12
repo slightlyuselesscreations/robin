@@ -232,11 +232,11 @@ def _held_links(c: sqlite3.Connection, schema: str) -> None:
 # start runs them all after the columns are added, and each does nothing once done.
 # `test_migrations` fails `MIGRATION_DAYS` after that day, and the owner decides whether it goes.
 MIGRATIONS: tuple[tuple[str, Callable[[sqlite3.Connection, str], None]], ...] = (
-    ("2026-11-06", _universes),
-    ("2026-11-06", _suwayomi_added),
-    ("2026-11-06", _origins),
-    ("2026-11-06", _sent_notices),
-    ("2026-11-06", _held_links),
+    ("2026-11-12", _universes),
+    ("2026-11-12", _suwayomi_added),
+    ("2026-11-12", _origins),
+    ("2026-11-12", _sent_notices),
+    ("2026-11-12", _held_links),
 )
 MIGRATION_DAYS = 90
 

@@ -58,7 +58,6 @@ async def _book(settings: db.Settings, row: dict[str, Any], window: notices.Wind
             row,
             title=change.title,
             message=change.message,
-            click=found["hardcover"],
             cover=found["cover"],
         )
 
@@ -78,7 +77,6 @@ async def _book(settings: db.Settings, row: dict[str, Any], window: notices.Wind
         row,
         title=f"{row['title']} is out {window.relative(date.fromisoformat(when))}",
         message=f"Releases {when}.",
-        click=found["hardcover"],
         cover=found["cover"],
     )
     db.mark_notified("book_reminders", int(row["id"]), due.marker, done=due.last)
@@ -91,7 +89,6 @@ async def _send(
     *,
     title: str,
     message: str,
-    click: str,
     cover: str | None,
 ) -> None:
     await notify.send(
@@ -100,8 +97,6 @@ async def _send(
         about=db.Notified(row["title"], f"book={row['book_id']}", cover),
         title=title,
         message=message,
-        tags="books",
-        click=click,
         attach=cover,
     )
     log.info("books: %s", title)

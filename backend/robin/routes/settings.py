@@ -537,7 +537,6 @@ async def send_test_notification(body: NotifyTest) -> ConnectionCheck:
                 body.category,
                 title="Robin is connected",
                 message=f"{where} reach you here.",
-                tags="bell",
             )
         except notify.NotifyError as exc:
             failed.append(str(exc))

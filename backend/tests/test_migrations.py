@@ -67,6 +67,20 @@ def test_every_table_gains_the_columns_the_schema_added() -> None:
     assert made["tag"] == "Cinema"
 
 
+def test_held_notifications_lose_their_link_and_tags() -> None:
+    with db.conn() as c:
+        c.execute("ALTER TABLE held_notices ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+        c.execute("ALTER TABLE held_notices ADD COLUMN click TEXT")
+        c.execute(
+            "INSERT INTO held_notices (category, title, message, tags, click, created_at)"
+            " VALUES ('games', 'Kept', 'Later.', 'zzz', 'https://igdb.test', '2026-11-12')"
+        )
+    db.init_db()
+    with db.conn() as c:
+        assert not {"tags", "click"} & db._columns(c, "held_notices")
+        assert [r["title"] for r in c.execute("SELECT title FROM held_notices")] == ["Kept"]
+
+
 def test_no_migration_outlives_its_window() -> None:
     """A migration past its window is put to the owner: an install that skipped every release
     since loses what it changes, so dropping it is their call."""

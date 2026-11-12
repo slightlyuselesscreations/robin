@@ -148,17 +148,16 @@ async def test_a_notice_reaches_every_destination_at_the_categorys_place(
         about=db.Notified("Hello", "game=1"),
         title="Hello",
         message="Body",
-        click="https://igdb.test",
     )
 
     ntfy, tgram = delivered
-    # The trailing slash on the server must not become a double slash.
-    assert ntfy["url"].startswith("ntfys://tk_secret_value@ntfy.example.com/games?")
-    assert "click=https%3A%2F%2Figdb.test" in ntfy["url"]
+    # The trailing slash on the server must not become a double slash, and a notification
+    # opens the app that sent it, so it carries no link and no tags.
+    assert ntfy["url"] == "ntfys://tk_secret_value@ntfy.example.com/games"
     assert (ntfy["title"], ntfy["body"]) == ("Hello", "Body")
-    # A service with no link of its own carries it in the body, at its default place.
+    # Any other service lands at its default place.
     assert tgram["url"] == "tgram://123%3Aabc/-100"
-    assert tgram["body"] == "Body\nhttps://igdb.test"
+    assert tgram["body"] == "Body"
 
 
 async def test_one_destination_failing_is_logged_and_the_rest_still_sent(
@@ -220,7 +219,6 @@ async def test_quiet_hours_keep_notices_and_send_one_digest_when_they_end(
             about=db.Notified(f"Game {n}", "game=1"),
             title=f"Game {n} is out tomorrow",
             message=f"Releases 2026-09-1{n}.",
-            click=f"https://igdb.test/{n}",
         )
     assert delivered == []
     assert await notify.send_held(night) == 0
@@ -228,9 +226,7 @@ async def test_quiet_hours_keep_notices_and_send_one_digest_when_they_end(
     assert await notify.send_held(datetime(2026, 9, 11, 7, tzinfo=UTC)) == 1
     [sent] = delivered
     assert sent["title"] == "While you were away: 2 Games notifications"
-    assert (
-        "• Game 1 is out tomorrow\n  Releases 2026-09-11.\n  https://igdb.test/1" in (sent["body"])
-    )
+    assert "• Game 1 is out tomorrow\n  Releases 2026-09-11." in sent["body"]
     assert "Game 2" in sent["body"]
     assert db.held_notices() == {}
 
@@ -271,7 +267,7 @@ async def test_a_test_sends_to_each_destination_as_the_form_holds_it(
         json={"destinations": [{**NTFY_TOKEN, "places": {"books": "shelf"}}], "category": "books"},
     )
     assert resp.json() == {"ok": True, "detail": "Sent to ntfy"}
-    assert delivered[0]["url"].startswith("ntfys://tk_secret_value@ntfy.example.com/shelf?")
+    assert delivered[0]["url"] == "ntfys://tk_secret_value@ntfy.example.com/shelf"
 
 
 async def test_setup_waits_on_notifications(client: AsyncClient) -> None:
@@ -461,9 +457,7 @@ async def test_every_notice_sent_is_kept_newest_first(
         title="2 new #1s",
         message="Digest",
     )
-    db.hold_notice(
-        "games", "Kept is out", "Later.", "zzz", None, None, [db.Notified("Kept", "game=2")]
-    )
+    db.hold_notice("games", "Kept is out", "Later.", None, [db.Notified("Kept", "game=2")])
     assert await notify.send_held() == 1
     await notify.send(
         settings, channel, about=db.Notified("Dreadmoor", "game=1"), title="Moved", message="Again."

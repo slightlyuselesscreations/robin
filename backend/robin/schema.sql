@@ -369,8 +369,6 @@ CREATE TABLE IF NOT EXISTS held_notices (
     category   TEXT NOT NULL,
     title      TEXT NOT NULL,
     message    TEXT NOT NULL,
-    tags       TEXT NOT NULL DEFAULT '',
-    click      TEXT,
     attach     TEXT,
     items_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL

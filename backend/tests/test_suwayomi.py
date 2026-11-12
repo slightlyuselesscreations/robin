@@ -160,7 +160,6 @@ async def test_a_series_is_added_as_soon_as_the_source_lists_it(
     [notice] = delivered
     assert notice["url"].startswith("ntfys://ntfy.test/comics?")
     assert notice["title"] == "Midnight X-Men is in your library"
-    assert "click=https%3A%2F%2Fsuwayomi.test%2Fmanga%2F1954" in notice["url"]
     assert notice["body"] == "No issue yet"
 
     [row] = (await client.get("/api/comics/monitored")).json()
@@ -351,7 +350,6 @@ async def test_the_library_is_monitored_and_each_new_issue_announced_once(
     assert await suwayomi.sync_library() == 1
     [notice] = delivered
     assert notice["title"] == "Corpse Knight #7"
-    assert "click=https%3A%2F%2Fsuwayomi.test%2Fmanga%2F209" in notice["url"]
     assert await suwayomi.sync_library() == 0, "an issue is announced once"
 
     suwayomi_stub["library"] = [shelved(209, "Corpse Knight (2026-)", 9)]

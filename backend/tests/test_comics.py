@@ -155,7 +155,7 @@ async def test_a_week_is_one_digest_sent_once(
     # The Friday of the week, its Wednesday past.
     assert await comics.notify_new_firsts(FRIDAY) == 1
     [sent] = delivered
-    assert sent["url"].startswith("ntfys://ntfy.test/comics?")
+    assert sent["url"] == "ntfys://ntfy.test/comics"
     assert sent["title"] == "3 new #1s this week"
     assert sent["body"].startswith("MARVEL (1)\n• Midnight Spider-Man\n\nDC COMICS (1)\n")
 

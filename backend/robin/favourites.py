@@ -169,7 +169,7 @@ def tag(category: Category, release: dict[str, Any]) -> str | None:
 
 def _brief(category: Category, release: dict[str, Any]) -> dict[str, Any]:
     """One release in a shape every category shares: its key, title, day, art, and where it
-    opens, on its source for a notice and in Robin as a dialog parameter."""
+    opens in Robin as a dialog parameter."""
     if category == "games":
         stamp = release["first_release_date"]
         cover = release["cover_image_id"]
@@ -177,7 +177,6 @@ def _brief(category: Category, release: dict[str, Any]) -> dict[str, Any]:
             "key": str(release["igdb_id"]),
             "title": release["name"],
             "date": datetime.fromtimestamp(stamp, tz=UTC).date() if stamp else None,
-            "click": release.get("url") or f"https://www.igdb.com/games/{release['slug']}",
             "art": igdb.image_url(cover) if cover else None,
             "image": f"/img/cover_big/{cover}.jpg" if cover else None,
             "to": f"game={release['igdb_id']}",
@@ -187,7 +186,6 @@ def _brief(category: Category, release: dict[str, Any]) -> dict[str, Any]:
             "key": release["id"],
             "title": release["title"],
             "date": date.fromisoformat(release["date"]) if release["date"] else None,
-            "click": release["url"],
             "art": release["cover"],
             "image": release["cover"],
             "to": f"comic={release['id']}",
@@ -197,7 +195,6 @@ def _brief(category: Category, release: dict[str, Any]) -> dict[str, Any]:
             "key": f"{release['kind']}-{release['id']}",
             "title": release["title"],
             "date": date.fromisoformat(release["date"][:10]) if release["date"] else None,
-            "click": f"https://www.themoviedb.org/{release['kind']}/{release['id']}",
             "art": release["poster"],
             "image": release["poster"],
             "to": f"title={release['kind']}-{release['id']}",
@@ -206,7 +203,6 @@ def _brief(category: Category, release: dict[str, Any]) -> dict[str, Any]:
         "key": str(release["id"]),
         "title": release["title"],
         "date": date.fromisoformat(release["date"]) if release["date"] else None,
-        "click": release["hardcover"],
         "art": release["cover"],
         "image": release["cover"],
         "to": f"book={release['id']}",
@@ -351,16 +347,8 @@ def _monitor_key(category: Category, release: dict[str, Any]) -> str:
     return str(_brief(category, release)["key"])
 
 
-TAGS: dict[Category, str] = {
-    "games": "video_game",
-    "comics": "comic_book",
-    "screens": "clapper",
-    "books": "books",
-}
-
-
 async def notify_favourites(now: datetime | None = None) -> int:
-    """Announce each favourite's new release that is due. Returns how many were sent."""
+    """Notify each favourite's new release that is due. Returns how many were sent."""
     settings = db.get_settings()
     sent = 0
     for category in KINDS:
@@ -402,8 +390,6 @@ async def notify_favourites(now: datetime | None = None) -> int:
                         ),
                         title=f"{release['title']} is out {window.relative(when)}",
                         message=f"From {favourite['name']}. Releases {when.isoformat()}.",
-                        tags=TAGS[category],
-                        click=release["click"],
                         attach=release["art"],
                     )
                 except notify.NotifyError as exc:
@@ -491,14 +477,13 @@ async def _tell_monitored(
     def item(release: dict[str, Any], name: str) -> db.Notified:
         return db.Notified(release["title"], release["to"], release["image"], release["tag"], name)
 
-    # Each as what it is about, title, message, where it opens and its art.
-    sends: list[tuple[db.Notified | list[db.Notified], str, str, str | None, str | None]] = (
+    # Each as what it is about, title, message and its art.
+    sends: list[tuple[db.Notified | list[db.Notified], str, str, str | None]] = (
         [
             (
                 item(release, name),
                 f"Now monitoring {release['title']} ({label})",
                 f"You favourited {name}.",
-                release["click"],
                 release["art"],
             )
             for release, name in told
@@ -510,11 +495,10 @@ async def _tell_monitored(
                 f"Now monitoring {len(told)} releases ({label})",
                 "\n".join(f"{release['title']}. You favourited {name}." for release, name in told),
                 None,
-                None,
             )
         ]
     )
-    for about, title, message, click, attach in sends:
+    for about, title, message, attach in sends:
         try:
             await notify.send(
                 settings,
@@ -522,8 +506,6 @@ async def _tell_monitored(
                 about=about,
                 title=title,
                 message=message,
-                tags=TAGS[category],
-                click=click,
                 attach=attach,
             )
         except notify.NotifyError as exc:
@@ -635,8 +617,6 @@ async def notify_series(now: datetime | None = None) -> int:
                     ),
                     title=change.title,
                     message=change.message,
-                    tags="calendar",
-                    click=issue["url"],
                     attach=issue["cover"],
                 )
 
@@ -669,8 +649,6 @@ async def notify_series(now: datetime | None = None) -> int:
                     ),
                     title=f"{issue['title']}{out}",
                     message=issue["publisher"] or row["series"],
-                    tags="comic_book",
-                    click=issue["url"],
                     attach=issue["cover"],
                 )
             except notify.NotifyError as exc:

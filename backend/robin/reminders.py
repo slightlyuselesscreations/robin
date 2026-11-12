@@ -97,7 +97,6 @@ async def _movie(settings: db.Settings, row: dict[str, Any], window: notices.Win
         row,
         title=f"{title} is {word} {window.relative(date.fromisoformat(when))}",
         message=f"Releases {when} in {settings.tmdb_region}.",
-        tags="clapper",
     )
     db.mark_notified("reminders", int(row["id"]), due.marker, done=due.last)
     return told + 1
@@ -123,7 +122,6 @@ async def _show(settings: db.Settings, row: dict[str, Any], window: notices.Wind
         row,
         title=f"{title} season {season} premieres {window.relative(when)}",
         message=f"Season {season} starts {episode['air_date']}.",
-        tags="tv",
     )
     db.mark_notified("reminders", int(row["id"]), due.marker, done=False)
     return told + 1
@@ -135,7 +133,7 @@ async def _told(
     """Tell of a reminder's date changing, `notices.tell_change`. Returns how many were sent."""
 
     async def tell(change: notices.Change) -> None:
-        await _send(settings, row, title=change.title, message=change.message, tags="calendar")
+        await _send(settings, row, title=change.title, message=change.message)
 
     return await notices.tell_change(
         name,
@@ -147,17 +145,13 @@ async def _told(
     )
 
 
-async def _send(
-    settings: db.Settings, row: dict[str, Any], *, title: str, message: str, tags: str
-) -> None:
+async def _send(settings: db.Settings, row: dict[str, Any], *, title: str, message: str) -> None:
     await notify.send(
         settings,
         settings.channel("screens"),
         about=db.Notified(row["title"], f"title={row['kind']}-{row['tmdb_id']}", row["poster"]),
         title=title,
         message=message,
-        tags=tags,
-        click=f"https://www.themoviedb.org/{row['kind']}/{row['tmdb_id']}",
         attach=row["poster"],
     )
     log.info("reminders: %s", title)

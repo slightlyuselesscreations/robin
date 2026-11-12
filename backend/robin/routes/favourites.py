@@ -172,7 +172,6 @@ async def _tell_failed(
             about=[db.Notified(entry["title"], "") for entry in failed],
             title=f"Could not remove {len(failed)} from {' and '.join(places)}",
             message="\n".join(entry["title"] for entry in failed),
-            tags=favourites.TAGS[category],
         )
     except notify.NotifyError as exc:
         log.warning("favourites: could not tell of a failed removal: %s", exc)

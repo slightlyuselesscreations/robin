@@ -74,8 +74,8 @@ class Service:
     url: Callable[[Values], str]
     # The field naming where on the service a notice lands, which a category can change.
     place: str | None = None
-    # ntfy takes a link, an image and tags as options of its address. Any other service gets
-    # the link in the body and the image as an attachment.
+    # ntfy takes the image as an option of its address. Any other service gets it as an
+    # attachment.
     options: bool = False
 
 
@@ -341,8 +341,6 @@ async def send(
     about: db.Notified | list[db.Notified],
     title: str,
     message: str,
-    tags: str = "video_game",
-    click: str | None = None,
     attach: str | None = None,
 ) -> None:
     """Send one notice on a category's channel to every destination, or keep it while the
@@ -352,7 +350,7 @@ async def send(
     if not settings.notify_destinations:
         raise NotifyError("No notification destination. Add one in Settings.")
     if held_until(channel.quiet, notices.local_now()) is not None:
-        db.hold_notice(channel.category, title, message, tags, click, attach, items)
+        db.hold_notice(channel.category, title, message, attach, items)
         log.info("notify: %r kept until quiet hours end", title)
         return
     await deliver(
@@ -360,8 +358,6 @@ async def send(
         channel.category,
         title=title,
         message=message,
-        tags=tags,
-        click=click,
         attach=attach,
     )
     db.sent_notice(channel.category, items)
@@ -373,8 +369,6 @@ async def deliver(
     *,
     title: str,
     message: str,
-    tags: str = "",
-    click: str | None = None,
     attach: str | None = None,
 ) -> None:
     """Send to each destination now. One that fails is logged and kept for Health, and only
@@ -384,19 +378,15 @@ async def deliver(
     for destination in destinations:
         service = SERVICES[destination["service"]]
         url = address(destination, category)
-        body = message
         image = attach
         if service.options:
-            given = {k: v for k, v in {"click": click, "attach": attach, "tags": tags}.items() if v}
-            if given:
-                url += ("&" if "?" in url else "?") + urlencode(given)
+            if attach:
+                url += ("&" if "?" in url else "?") + urlencode({"attach": attach})
             image = None
-        elif click:
-            body = f"{message}\n{click}"
-        error = await _deliver(url, title=title, body=body, attach=image, theme=theme)
+        error = await _deliver(url, title=title, body=message, attach=image, theme=theme)
         if error and image:
             # An image that cannot be fetched never holds a notice back.
-            error = await _deliver(url, title=title, body=body, attach=None, theme=theme)
+            error = await _deliver(url, title=title, body=message, attach=None, theme=theme)
         key = f"notify:error:{destination['id']}"
         if error:
             failures.append(f"{service.label}: {error}")
@@ -439,14 +429,8 @@ LABELS: dict[db.Category, str] = {
 
 
 def digest(rows: list[dict[str, Any]]) -> str:
-    """Every notice kept, oldest first: its title, its text and its link."""
-    parts = []
-    for row in rows:
-        lines = [f"• {row['title']}", f"  {row['message']}"]
-        if row["click"]:
-            lines.append(f"  {row['click']}")
-        parts.append("\n".join(lines))
-    return "\n\n".join(parts)
+    """Every notice kept, oldest first: its title and its text."""
+    return "\n\n".join(f"• {row['title']}\n  {row['message']}" for row in rows)
 
 
 async def send_held(now: datetime | None = None) -> int:
@@ -474,8 +458,6 @@ async def send_held(now: datetime | None = None) -> int:
                     else f"While you were away: {len(rows)} {LABELS[category]} notifications"
                 ),
                 message=one["message"] if alone else digest(rows),
-                tags=one["tags"] if alone else "zzz",
-                click=one["click"] if alone else None,
                 attach=one["attach"] if alone else None,
             )
         except NotifyError as exc:
@@ -556,7 +538,6 @@ async def notify_upcoming_releases(now: datetime | None = None) -> int:
                 about=game_item(row),
                 title=f"{row['game_name']} is out {window.relative(release)}",
                 message=f"Releases {release.isoformat()}.{_kind(row['release_status'])}",
-                click=f"https://www.igdb.com/games/{row['igdb_id']}",
             )
         except NotifyError as exc:
             # Leave the marker unset so the next pass tries again.
@@ -627,8 +608,6 @@ async def notify_date_changes(now: datetime | None = None) -> int:
                 about=game_item(row),
                 title=change.title,
                 message=f"{change.message}{_kind(game.get('release_status'))}",
-                tags="calendar",
-                click=f"https://www.igdb.com/games/{game['igdb_id']}",
             )
             log.info("notify: %s", change.title)
 

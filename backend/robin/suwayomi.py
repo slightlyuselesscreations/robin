@@ -391,8 +391,6 @@ async def _sync_library() -> int:
                     if len(done) == 1
                     else f"{len(done)} new issues of {row['series']}",
                     message=held["title"],
-                    tags="books",
-                    click=held["url"],
                     attach=held["thumbnailUrl"],
                 )
             except notify.NotifyError as exc:
@@ -519,8 +517,6 @@ async def add_if_found(
                 about=db.Notified(comic["series"], f"series={match['id']}", comic["cover"]),
                 title=f"{comic['series']} is in your library",
                 message=f"{count} issue{'' if count == 1 else 's'}" if count else "No issue yet",
-                tags="books",
-                click=f"{settings.suwayomi_url}/manga/{match['id']}",
                 attach=comic["cover"],
             )
         except notify.NotifyError as exc:

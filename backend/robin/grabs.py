@@ -137,7 +137,6 @@ async def _consider(releases: list[dict[str, Any]], request: dict[str, Any]) -> 
             title=f"Confirm a release for {request['game_name']}",
             message=f"PreDB could not vouch for {unsure['title']}. Open the game in Robin to "
             "grab it or reject it.",
-            tags="question",
         )
     return 0
 
@@ -164,7 +163,6 @@ async def _grab(release: dict[str, Any], request: dict[str, Any]) -> int:
         request,
         title=f"{request['game_name']} is downloading",
         message=f"Sent {release['title']} to {client}.",
-        tags="inbox_tray",
     )
     return 1
 
@@ -242,7 +240,6 @@ async def track_downloads() -> int:
                 request,
                 title=f"{request['game_name']} is downloaded",
                 message=str(request["matched_release"]),
-                tags="white_check_mark",
             )
     return done
 
@@ -261,9 +258,7 @@ async def with_downloads(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{**r, "download": held.get(r["id"])} for r in rows]
 
 
-async def _tell(
-    settings: db.Settings, about: dict[str, Any], *, title: str, message: str, tags: str
-) -> None:
+async def _tell(settings: db.Settings, about: dict[str, Any], *, title: str, message: str) -> None:
     """A notice on the games topic, while it is on. A failed one is logged, never retried."""
     channel = settings.notices("games")
     if channel is None:
@@ -275,7 +270,6 @@ async def _tell(
             about=notify.game_item(about),
             title=title,
             message=message,
-            tags=tags,
         )
     except notify.NotifyError as exc:
         log.warning("grabs: could not send %r: %s", title, exc)

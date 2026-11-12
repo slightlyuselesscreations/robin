@@ -556,7 +556,6 @@ async def _announce_week(
             ],
             title=f"{firsts} {when}",
             message=digest(fresh),
-            tags="comic_book",
         )
     except notify.NotifyError as exc:
         log.warning("comics: digest for %s failed: %s", week, exc)

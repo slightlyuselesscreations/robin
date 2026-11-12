@@ -222,6 +222,12 @@ def _sent_notices(c: sqlite3.Connection, schema: str) -> None:
     c.execute("DROP TABLE IF EXISTS sent_notices")
 
 
+def _held_links(c: sqlite3.Connection, schema: str) -> None:
+    """A held notification kept its link and ntfy tags before notifications carried neither."""
+    for column in sorted({"tags", "click"} & _columns(c, "held_notices")):
+        c.execute(f"ALTER TABLE held_notices DROP COLUMN {column}")
+
+
 # One-time changes to what an older Robin stored, each with the day its release shipped. Every
 # start runs them all after the columns are added, and each does nothing once done.
 # `test_migrations` fails `MIGRATION_DAYS` after that day, and the owner decides whether it goes.
@@ -230,6 +236,7 @@ MIGRATIONS: tuple[tuple[str, Callable[[sqlite3.Connection, str], None]], ...] = 
     ("2026-11-06", _suwayomi_added),
     ("2026-11-06", _origins),
     ("2026-11-06", _sent_notices),
+    ("2026-11-06", _held_links),
 )
 MIGRATION_DAYS = 90
 
@@ -1737,17 +1744,15 @@ def hold_notice(
     category: Category,
     title: str,
     message: str,
-    tags: str,
-    click: str | None,
     attach: str | None,
     items: list[Notified],
 ) -> None:
     with conn() as c:
         c.execute(
             "INSERT INTO held_notices"
-            " (category, title, message, tags, click, attach, items_json, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (category, title, message, tags, click, attach, json.dumps(items), now()),
+            " (category, title, message, attach, items_json, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (category, title, message, attach, json.dumps(items), now()),
         )
 
 

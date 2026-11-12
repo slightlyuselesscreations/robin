@@ -25,42 +25,48 @@ A self-hosted, future release tracker for games, movies, shows, books, comics an
 
 **Track & Monitor**
 
-Browse what's coming in every category, search by title or cross-reference by who makes it, and then monitor anything with one click.
+Browse what's coming and then keep anything monitored with one click.
 
 </td>
 <td width="33%" valign="top">
 
 **Hear about it**
 
-Every release date becomes a notification on `ntfy`, Discord, Telegram and many more, set on a schedule like a regular calendar reminder, and held back during quiet hours. With a digest ready for when you come back.
+Every release date becomes a notification. You can set on a schedule exactly like a regular calendar reminder. It can also be held back during quiet hours. With a digest ready for when you come back.
 
 </td>
 <td width="33%" valign="top">
 
 **Get it**
 
-By bringing your own infrastructure, `Robin` will also integrate with some third party software to hand-off what it found and make sure you have what you want.
+By bringing your own infrastructure, `Robin` will also integrate with some third party software to hand-off what it found.
 
 </td>
 </tr>
 </table>
 
-## What Robin is
+## The idea behind
 
-`Robin` is your personal companion for tracking many kinds of media. So you can spend less time looking for what's new and more time doing what you love. Instead of keeping tabs on the entire internet for release dates and updates, hand that job over to `Robin`!
+`Robin` is your personal companion for tracking many kinds of entertainment media. So you can spend less time looking for what's new and more time doing what you love. Instead of keeping tabs on the entire internet for release dates and updates, hand that job over to `Robin`!
 
-At its core, `Robin` tracks entertainment media across various formats while helping you discover what's next. It aggregates free, public databases into a clean, intuitive interface designed to deliver the exact information you need.
+It aggregates free, public databases into a clean, intuitive interface designed to deliver the exact information you need.
 
-Simply put, `Robin` monitors upcoming release dates, tracks changes automatically, and notifies you when something you care about is about to drop.
+Simply put, `Robin` monitors upcoming release dates, tracks changes automatically, and notifies you when anything happens to what you look forward to.
 
 
-Please expect rapid development, and breaking changes. Stick on `:latest` to be safer.
+I consider `Robin` to be feature stable. That said, there are new features planned. So please expect rapid development, and many breaking changes. Stick on `:latest` to be safer. Ideally the release cycle for robin is one week of development, one week of testing. So one, or two (at most) releases every two weeks. (This does not include bugfixes, or security updates.)
 
-## Features
+## How does it work (in short-ish)
 
-### How categories work
+`Robin` shifts its objects into three different phases, makine one lifecycle:
 
-`Robin` is divided into `categories` and `integrations`. Here's a table describing them:
+1. `Monitored` is the initial phase, once you monitor an item you are waiting to hear more about it. `Robin` will track it's release date hourly, and if anything changes you will be notified. Or, depending on how (or when) you want to be notified, it will warn you of an imminent release. Or about its status on the next phase.
+2. `Tracked` this is a state that appears exclusively when you have a supported integration configured that a category's item also supports. It is a state AFTER an official release has already happened, but you're still waiting for an integration to do its job before `Robin` can move to the next phase.
+3. `Notified` this is an object's final phase in its lifecycle. At this point `Robin` is aware that you either actually got notified of an approaching release and/or got what you wanted from an integration that was handling that item up to that point.
+
+After these three phases are over, `Robin` could not care less about what happens to that item. The next day it will completely forget about it.
+
+Each item type `Robin` can manage is divided into `categories` and each one of them has `integrations` that might enhance them. Here's a table:
 
 | Category | Data source | What you get | Optional integrations |
 |---|---|---|---|
@@ -69,33 +75,7 @@ Please expect rapid development, and breaking changes. Stick on `:latest` to be 
 | **Books** | `Hardcover` | Upcoming books and managing your `Want to Read` list on `Hardcover`. | `TBD` |
 | **Comics** | `Metron` | Every comic released each week, this week first, with the #1 issues marked and a publisher filter. | `Suwayomi` |
 
-And across these categories, other features include:
-
-- A **Home** page that shows what's next, countdowns to the releases you care about most, a calendar and what was recently notified.
-- A **Favourites** page displaying favourited developers, franchises, actors, directors, studios, networks, authors or book series. Once an item is favourited, every relation to it can be automatically notified or monitored with two configurable switches.
-- **One search bar** for anything that `Robin` can track. Just pick a category and let it run. Then monitor, or favourite.
-- **Notifications** are sent on configurable schedules to [`ntfy`](https://ntfy.sh), Discord, Slack, Telegram, Matrix, Gotify, Pushover, Home Assistant and anything else [`Apprise`](https://github.com/caronc/apprise) can reach. Each category can go to its own channel or topic. With optional quiet hours so that you are not bothered when you don't want to.
-- **Backups** of everything you set up, encrypted with a passphrase of your choice, taken daily and kept in your data folder. A fresh install can be restored from one during setup.
-- A **Logs** page, to see what `Robin` and your integrations are doing, and why something might not be working.
-
-**Everything is optional.** `Robin` is fully modular. A category is enabled by adding its respective API key. If nothing is configured, `Robin` still starts but doesn't do anything. This makes it so you are able to configure only the categories you are interested in.
-
-### How tracking works
-
-```mermaid
-flowchart LR
-    A[Monitor anything] --> B[Robin follows<br>its date hourly]
-    B --> C[Notifies on your<br>schedule]
-    B -- date moves --> C
-    C --> D[Release day]
-    D --> E[Notified]
-    D -. integration .-> F[Handed off] -.-> E
-```
-
-- **Follows the date, not a snapshot of one.** A date that moves is announced again, and an undated item you track is announced once it gets one.
-- **Nothing missed.** If `Robin` was off when a notice was due, it sends it when it starts again, once.
-- **Favourites keep watch for you.** New releases from a favourite item are announced, or monitored automatically. For example, this way you don't have to track every single Larian Studious game! You can just favourite it as a developer, and every single one of their games will be monitored automatically.
-- **Hand-off is optional.** With an integration set, what `Robin` finds goes to it: a PC game to `qBittorrent` through `Prowlarr` and `PreDB`, a movie or show to `Radarr` or `Sonarr`, a comic series to `Suwayomi`.
+Keep in mind that **everything is optional.** `Robin` is fully modular. A category is enabled by adding its respective source's API key. If none are configured, `Robin` still starts, but doesn't do anything. This makes it so you are able to configure the categories of media you are interested in, and nothing else.
 
 ### How integrations work
 
@@ -103,11 +83,17 @@ flowchart LR
 
 Here's a very brief description of what you can do, with infrastructure you might already run:
 
-1. Monitored `PC` games, when `Prowlarr` is configured, are periodically searched through your instance and its results are checked against a `PreDB` API for release quality and then handed off to `qBittorrent`. When `PreDB` can't vouch for a release, `Robin` requests your intervention.
-2. When `Suwayomi` is configured, the comics page will display your installed extension's latest series. And the #1 issues of the week, once monitored are searched against it until they are found and added directly to your `Suwayomi` library.
-3. When `Sonarr` or `Radarr` are configured, `Robin`'s `Home` page calendar will reflect your `*arr` stack. Items that are already present in your stack will be marked by color coding names in the `Screens` page of `Robin`. And when you monitor something from `Robin` you can automatically add them to your stack, or do it manually. Anything your stack already holds that hasn’t come out yet is monitored in Robin automatically.
+1. Monitored `PC` games: when `Prowlarr` is configured, a PC game is periodically searched through your instance and its results are checked against a `PreDB` API for release quality and then handed off to `qBittorrent`. When `PreDB` can't vouch for a release, `Robin` requests your intervention, and the hand off is manual.
+2. When `Suwayomi` is configured with a source capable of displaying comics, you will be able to track comic books that are releasing each week, and also browse the source itself directly from `Robin`, adding any comic to the Suwayomi library itself. Both from the comics found in `Metron` or directly from `Suwayomi`'s source.
+3. When `Sonarr` or `Radarr` are configured: `Robin`'s `Home` page calendar will reflect your `*arr` stack. Items that are already present in your stack will be marked by color coding their names around `Robin`. And when you monitor something from `Robin` you can set it up to automatically add them to your stack, or do it manually. Anything your stack already holds that hasn’t come out yet and isn't already on `Robin` can also be automatically monitored.
 
 It is important to understand that these integrations are all optional. `Robin` does not require you to have them to do its biggest job.
+
+### How `favourites` work
+
+The `favourites` feature is one of `Robin`'s most powerful tools. In short, it allows you to automatically monitor anything that your favourited item has in store for the future.
+
+In practical terms: a simple example would be favouriting the `Marvel` movie studio. By doing that, `Robin` will make sure that any movie appearing from it is automatically monitored. The same goes for almost anything that a certain item has metadata for. You could favourite a comic book series, a character within one, a character from a movie, an actor in one, TV network, a specific director, an entire franchise or even a specific comic book arist you love.
 
 ## Install
 
@@ -152,10 +138,10 @@ Open `http://<your-server>:8080`, sign in with it and choose your own password. 
 
 ## What it is not
 
-- **Not designed for the open internet:** `Robin` is not something you should open up to the internet. Use it at home, or through a VPN.
-- **Not a requests handler:** `Robin` is managed by one account, no other users, no requests to approve
+- **Not designed for the open internet:** `Robin` is not something you should open up to the internet. It is secure, and always will be. But I do **not** recommend exposing it to the internet. That is not something I am stressing about.
+- **Not a multiple user requests handler:** `Robin` is managed by one account, no other users, no requests to approve. And no plans to make it into one. There are other great projects for this, one of them being: [Seerr](https://seerr.dev/)
 - **Not a downloader:** Robin does not download anything. If you have your own infrastrucure, that job is handed over.
-- **Not a backlog catalogue:** `Robin` lists what's coming, from tomorrow on. (With the exception of comic books)
+- **Not a backlog catalogue:** `Robin` lists what's coming, from tomorrow on.
 - **Not a library manager or player.** Once a release date has passed, `Robin` will stop caring about it. Including caring about anything from its configured integrations with your infrastructure. It will not manage lifecycle of anything past what it is designed to do, and definitely not for anything that has to do with the integrations it briefly talks to.
 
 ## Screenshots

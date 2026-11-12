@@ -112,6 +112,8 @@ services:
       TZ: UTC
     volumes:
       - ./data:/data
+      # Backups can also go on another disk, so losing ./data does not lose them too.
+      # - /mnt/backup/robin:/data/backups
 ```
 
 Then, next to it:
